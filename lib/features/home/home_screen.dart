@@ -7,6 +7,8 @@ import '../camera_analysis/camera_analysis_screen.dart';
 import '../ph_analysis/ph_analysis_screen.dart';
 import '../complete_test/complete_test_screen.dart';
 import '../history/history_screen.dart';
+import '../advice/advice_screen.dart';
+import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -458,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBottomNavigation() {
     return NavigationBar(
       selectedIndex: 0,
-      onDestinationSelected: (index) {
+      onDestinationSelected: (index) async {
         if (index == 1) {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -468,17 +470,30 @@ class _HomeScreenState extends State<HomeScreen> {
           return;
         }
 
-        if (index == 2 || index == 3) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _text(
-                  'This section will be available soon.',
-                  'यह सुविधा जल्द उपलब्ध होगी।',
-                ),
+        if (index == 2) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AdviceScreen(isHindi: _isHindi),
+            ),
+          );
+          return;
+        }
+
+        if (index == 3) {
+          final selectedLanguage = await Navigator.of(context).push<bool>(
+            MaterialPageRoute<bool>(
+              builder: (_) => SettingsScreen(
+                isHindi: _isHindi,
+                isDeviceConnected: _isDeviceConnected,
               ),
             ),
           );
+
+          if (!mounted || selectedLanguage == null) return;
+
+          setState(() {
+            _isHindi = selectedLanguage;
+          });
         }
       },
       backgroundColor: Colors.white,
