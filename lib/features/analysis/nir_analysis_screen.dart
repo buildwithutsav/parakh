@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/models/device_reading.dart';
 import '../../core/services/device_data_service.dart';
@@ -55,7 +56,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       _showResult = false;
       _reading = null;
     });
-
+    await HapticFeedback.heavyImpact();
     final enteredSampleId = _sampleIdController.text.trim();
 
     final reading = await _deviceDataService.generateDemoReading(
@@ -317,32 +318,75 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   }
 
   Widget _buildScanButton() {
+    final buttonColor = _isScanning
+        ? const Color(0xFF9DB5A5)
+        : ParakhColors.forestGreen;
+
     return SizedBox(
       height: 54,
-      child: FilledButton.icon(
-        onPressed: _isScanning ? null : _startScan,
-        style: FilledButton.styleFrom(
-          backgroundColor: ParakhColors.forestGreen,
-          disabledBackgroundColor: const Color(0xFF9DB5A5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-        ),
-        icon: _isScanning
-            ? const SizedBox(
-                width: 21,
-                height: 21,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2.5,
+      width: double.infinity,
+      child: Material(
+        color: buttonColor,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: _isScanning
+              ? null
+              : () {
+                  HapticFeedback.selectionClick();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _text(
+                          'Press and hold to start scanning.',
+                          'स्कैन शुरू करने के लिए दबाकर रखें।',
+                        ),
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+          onLongPress: _isScanning
+              ? null
+              : () async {
+                  await HapticFeedback.mediumImpact();
+                  await _startScan();
+                },
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isScanning)
+                  const SizedBox(
+                    width: 21,
+                    height: 21,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                else
+                  const Icon(Icons.touch_app_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Text(
+                  _isScanning
+                      ? _text(
+                          'Analysing sample...',
+                          'नमूने की जाँच हो रही है...',
+                        )
+                      : _text(
+                          'Hold to start NIR scan',
+                          'NIR स्कैन के लिए दबाकर रखें',
+                        ),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              )
-            : const Icon(Icons.sensors_rounded),
-        label: Text(
-          _isScanning
-              ? _text('Analysing sample...', 'नमूने की जाँच हो रही है...')
-              : _text('Start NIR scan', 'NIR स्कैन शुरू करें'),
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -471,8 +515,55 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   }
 
   Widget _metricRow(String label, String value, String status) {
+    final normalizedStatus = status.toLowerCase();
+
+    final bool isDanger =
+        normalizedStatus.contains('poor') ||
+        normalizedStatus.contains('high') ||
+        normalizedStatus.contains('low') ||
+        normalizedStatus.contains('खराब') ||
+        normalizedStatus.contains('अधिक') ||
+        normalizedStatus.contains('कम');
+
+    final bool isWarning =
+        normalizedStatus.contains('caution') ||
+        normalizedStatus.contains('check') ||
+        normalizedStatus.contains('review') ||
+        normalizedStatus.contains('सावधानी') ||
+        normalizedStatus.contains('जाँच');
+
+    final Color statusColor;
+    final Color statusBackground;
+
+    if (isDanger) {
+      statusColor = const Color(0xFFB54435);
+      statusBackground = const Color(0xFFFBE8E4);
+    } else if (isWarning) {
+      statusColor = const Color(0xFF9A6815);
+      statusBackground = const Color(0xFFFFF1CF);
+    } else {
+      statusColor = const Color(0xFF32834C);
+      statusBackground = const Color(0xFFE3F1E6);
+    }
+
     return Row(
       children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: statusColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: statusColor.withValues(alpha: 0.25),
+                blurRadius: 5,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
             label,
@@ -494,13 +585,13 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
-            color: const Color(0xFFE3F1E6),
+            color: statusBackground,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
             status,
-            style: const TextStyle(
-              color: Color(0xFF32834C),
+            style: TextStyle(
+              color: statusColor,
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
