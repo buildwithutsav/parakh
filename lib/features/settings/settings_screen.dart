@@ -22,6 +22,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late bool _isHindi;
   bool _isClearingHistory = false;
+  bool _isDemoMode = false;
 
   String _text(String english, String hindi) {
     return _isHindi ? hindi : english;
@@ -31,6 +32,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _isHindi = widget.isHindi;
+    _loadDemoMode();
+  }
+
+  Future<void> _loadDemoMode() async {
+    final preferences = await SharedPreferences.getInstance();
+    final enabled = preferences.getBool('demoMode') ?? false;
+
+    if (!mounted) return;
+
+    setState(() {
+      _isDemoMode = enabled;
+    });
+  }
+
+  Future<void> _changeDemoMode(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('demoMode', enabled);
+
+    if (!mounted) return;
+
+    setState(() {
+      _isDemoMode = enabled;
+    });
   }
 
   Future<void> _changeLanguage(bool isHindi) async {
@@ -476,6 +500,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'पहली बार उपयोग करने की जानकारी देखें',
             ),
             onTap: _showReplayTutorialDialog,
+          ),
+          const Divider(height: 1, indent: 76),
+          _settingsTile(
+            icon: Icons.science_rounded,
+            iconColor: const Color(0xFFD17B3F),
+            iconBackground: const Color(0xFFFBEDE3),
+            title: _text('Demo mode', 'डेमो मोड'),
+            subtitle: _text(
+              'Use simulated device readings for demonstrations',
+              'प्रदर्शन के लिए सिम्युलेटेड डिवाइस रीडिंग का उपयोग करें',
+            ),
+            trailing: Switch.adaptive(
+              value: _isDemoMode,
+              activeTrackColor: ParakhColors.forestGreen,
+              onChanged: _changeDemoMode,
+            ),
+            onTap: () => _changeDemoMode(!_isDemoMode),
           ),
           const Divider(height: 1, indent: 76),
           _settingsTile(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/parakh_colors.dart';
 import '../device/device_connection_screen.dart';
@@ -22,11 +23,24 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late bool _isHindi;
   bool _isDeviceConnected = false;
+  bool _isDemoMode = false;
 
   @override
   void initState() {
     super.initState();
     _isHindi = widget.isHindi;
+    _loadDemoMode();
+  }
+
+  Future<void> _loadDemoMode() async {
+    final preferences = await SharedPreferences.getInstance();
+    final enabled = preferences.getBool('demoMode') ?? false;
+
+    if (!mounted) return;
+
+    setState(() {
+      _isDemoMode = enabled;
+    });
   }
 
   String _text(String english, String hindi) {
@@ -315,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
               MaterialPageRoute<void>(
                 builder: (_) => NirAnalysisScreen(
                   isHindi: _isHindi,
-                  isDeviceConnected: _isDeviceConnected,
+                  isDeviceConnected: _isDeviceConnected || _isDemoMode,
                 ),
               ),
             );
@@ -357,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
               MaterialPageRoute<void>(
                 builder: (_) => CompleteTestScreen(
                   isHindi: _isHindi,
-                  isDeviceConnected: _isDeviceConnected,
+                  isDeviceConnected: _isDeviceConnected || _isDemoMode,
                 ),
               ),
             );
@@ -484,16 +498,20 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute<bool>(
               builder: (_) => SettingsScreen(
                 isHindi: _isHindi,
-                isDeviceConnected: _isDeviceConnected,
+                isDeviceConnected: _isDeviceConnected || _isDemoMode,
               ),
             ),
           );
 
-          if (!mounted || selectedLanguage == null) return;
+          if (!mounted) return;
 
-          setState(() {
-            _isHindi = selectedLanguage;
-          });
+          if (selectedLanguage != null) {
+            setState(() {
+              _isHindi = selectedLanguage;
+            });
+          }
+
+          await _loadDemoMode();
         }
       },
       backgroundColor: Colors.white,
