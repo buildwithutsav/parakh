@@ -63,6 +63,11 @@ class _DeviceConnectionScreenState extends State<DeviceConnectionScreen> {
         backgroundColor: ParakhColors.forestGreen,
       ),
     );
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) return;
+
+    Navigator.of(context).pop(true);
   }
 
   void _disconnectDevice() {

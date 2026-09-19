@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/parakh_colors.dart';
 import '../device/device_connection_screen.dart';
+import '../analysis/nir_analysis_screen.dart';
+import '../camera_analysis/camera_analysis_screen.dart';
+import '../ph_analysis/ph_analysis_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -14,6 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late bool _isHindi;
+  bool _isDeviceConnected = false;
 
   @override
   void initState() {
@@ -242,9 +246,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _text('Not connected', 'कनेक्ट नहीं है'),
-                  style: const TextStyle(
-                    color: Color(0xFF8A6257),
+                  _isDeviceConnected
+                      ? _text('Connected', 'कनेक्टेड')
+                      : _text('Not connected', 'कनेक्ट नहीं है'),
+                  style: TextStyle(
+                    color: _isDeviceConnected
+                        ? const Color(0xFF32834C)
+                        : const Color(0xFF8A6257),
                     fontSize: 13,
                   ),
                 ),
@@ -252,19 +260,30 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => DeviceConnectionScreen(isHindi: _isHindi),
-                ),
-              );
-            },
+            onPressed: _isDeviceConnected
+                ? null
+                : () async {
+                    final connected = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
+                        builder: (_) =>
+                            DeviceConnectionScreen(isHindi: _isHindi),
+                      ),
+                    );
+
+                    if (!mounted || connected != true) return;
+
+                    setState(() {
+                      _isDeviceConnected = true;
+                    });
+                  },
             style: FilledButton.styleFrom(
               backgroundColor: ParakhColors.forestGreen,
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
             ),
             child: Text(
-              _text('Connect', 'कनेक्ट करें'),
+              _isDeviceConnected
+                  ? _text('Connected', 'कनेक्टेड')
+                  : _text('Connect', 'कनेक्ट करें'),
               style: const TextStyle(fontSize: 12),
             ),
           ),
@@ -287,24 +306,49 @@ class _HomeScreenState extends State<HomeScreen> {
           title: _text('NIR Scan', 'NIR स्कैन'),
           subtitle: _text('Nutrient analysis', 'पोषक तत्व जाँच'),
           color: const Color(0xFF2F7650),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => NirAnalysisScreen(
+                  isHindi: _isHindi,
+                  isDeviceConnected: _isDeviceConnected,
+                ),
+              ),
+            );
+          },
         ),
         _analysisCard(
           icon: Icons.camera_alt_rounded,
           title: _text('Camera Test', 'कैमरा जाँच'),
           subtitle: _text('Detect impurities', 'अशुद्धियाँ पहचानें'),
           color: const Color(0xFFD17B3F),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CameraAnalysisScreen(isHindi: _isHindi),
+              ),
+            );
+          },
         ),
         _analysisCard(
           icon: Icons.science_rounded,
           title: _text('pH Test', 'pH जाँच'),
           subtitle: _text('Scan test strip', 'टेस्ट स्ट्रिप स्कैन करें'),
           color: const Color(0xFF3D70A8),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PhAnalysisScreen(isHindi: _isHindi),
+              ),
+            );
+          },
         ),
         _analysisCard(
           icon: Icons.auto_awesome_rounded,
           title: _text('Complete Test', 'संपूर्ण जाँच'),
           subtitle: _text('Combined result', 'संयुक्त परिणाम'),
           color: const Color(0xFF8063A6),
+          onTap: () {},
         ),
       ],
     );
@@ -315,12 +359,13 @@ class _HomeScreenState extends State<HomeScreen> {
     required String title,
     required String subtitle,
     required Color color,
+    required VoidCallback onTap,
   }) {
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(19),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(19),
         child: Container(
           padding: const EdgeInsets.all(16),
