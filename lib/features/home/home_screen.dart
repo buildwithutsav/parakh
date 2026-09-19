@@ -6,6 +6,7 @@ import '../analysis/nir_analysis_screen.dart';
 import '../camera_analysis/camera_analysis_screen.dart';
 import '../ph_analysis/ph_analysis_screen.dart';
 import '../complete_test/complete_test_screen.dart';
+import '../history/history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -457,6 +458,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBottomNavigation() {
     return NavigationBar(
       selectedIndex: 0,
+      onDestinationSelected: (index) {
+        if (index == 1) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => HistoryScreen(isHindi: _isHindi),
+            ),
+          );
+          return;
+        }
+
+        if (index == 2 || index == 3) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _text(
+                  'This section will be available soon.',
+                  'यह सुविधा जल्द उपलब्ध होगी।',
+                ),
+              ),
+            ),
+          );
+        }
+      },
       backgroundColor: Colors.white,
       indicatorColor: const Color(0xFFDDEDE1),
       destinations: [

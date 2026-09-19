@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/feed_test_result.dart';
+import '../../core/storage/test_history_storage.dart';
+
 import '../../core/theme/parakh_colors.dart';
 
 class CompleteTestScreen extends StatefulWidget {
@@ -22,6 +25,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
   bool _isRunning = false;
   bool _showResult = false;
   final List<bool> _completedSteps = [false, false, false, false];
+  final TestHistoryStorage _historyStorage = TestHistoryStorage();
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
@@ -71,11 +75,40 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
 
     if (!mounted) return;
 
+    final completedAt = DateTime.now();
+
+    final result = FeedTestResult(
+      id: completedAt.microsecondsSinceEpoch.toString(),
+      feedType: _selectedFeed,
+      testType: 'Complete Test',
+      score: 87,
+      riskLevel: 'LOW',
+      phValue: 4.3,
+      nutritionStatus: 'Good',
+      impurityStatus: 'Low',
+      recommendationEnglish: 'The sample appears suitable for feeding. Remove visible soil, store it in a dry covered area, and use a balanced mineral mixture according to expert advice.',
+      recommendationHindi: 'नमूना खिलाने के लिए उपयुक्त दिखाई देता है। दिखाई देने वाली मिट्टी हटाएँ, इसे सूखी ढकी जगह पर रखें और विशेषज्ञ की सलाह के अनुसार संतुलित खनिज मिश्रण दें।',
+      createdAt: completedAt,
+    );
+
+    await _historyStorage.saveResult(result);
+
+    if (!mounted) return;
+
     setState(() {
       _activeStep = -1;
       _isRunning = false;
       _showResult = true;
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _text('Result saved offline.', 'परिणाम ऑफलाइन सुरक्षित किया गया।'),
+        ),
+        backgroundColor: ParakhColors.forestGreen,
+      ),
+    );
   }
 
   void _resetTest() {
