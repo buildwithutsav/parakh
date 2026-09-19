@@ -5,6 +5,7 @@ import '../device/device_connection_screen.dart';
 import '../analysis/nir_analysis_screen.dart';
 import '../camera_analysis/camera_analysis_screen.dart';
 import '../ph_analysis/ph_analysis_screen.dart';
+import '../complete_test/complete_test_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -348,7 +349,16 @@ class _HomeScreenState extends State<HomeScreen> {
           title: _text('Complete Test', 'संपूर्ण जाँच'),
           subtitle: _text('Combined result', 'संयुक्त परिणाम'),
           color: const Color(0xFF8063A6),
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CompleteTestScreen(
+                  isHindi: _isHindi,
+                  isDeviceConnected: _isDeviceConnected,
+                ),
+              ),
+            );
+          },
         ),
       ],
     );
