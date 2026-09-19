@@ -35,7 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _changeLanguage(bool isHindi) async {
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('isHindi', isHindi);
+    await preferences.setString('language', isHindi ? 'hi' : 'en');
 
     if (!mounted) return;
 
