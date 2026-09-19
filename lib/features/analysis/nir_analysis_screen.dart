@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/device_reading.dart';
+import '../../core/services/device_data_service.dart';
+
 import '../../core/theme/parakh_colors.dart';
 
 class NirAnalysisScreen extends StatefulWidget {
@@ -18,10 +21,12 @@ class NirAnalysisScreen extends StatefulWidget {
 
 class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   final TextEditingController _sampleIdController = TextEditingController();
+  final DeviceDataService _deviceDataService = DeviceDataService();
 
   String _selectedFeed = 'Maize Silage';
   bool _isScanning = false;
   bool _showResult = false;
+  DeviceReading? _reading;
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
@@ -48,13 +53,20 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     setState(() {
       _isScanning = true;
       _showResult = false;
+      _reading = null;
     });
 
-    await Future<void>.delayed(const Duration(seconds: 3));
+    final enteredSampleId = _sampleIdController.text.trim();
+
+    final reading = await _deviceDataService.generateDemoReading(
+      sampleId: enteredSampleId.isEmpty ? 'S001' : enteredSampleId,
+      feedType: _selectedFeed,
+    );
 
     if (!mounted) return;
 
     setState(() {
+      _reading = reading;
       _isScanning = false;
       _showResult = true;
     });
@@ -63,12 +75,14 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   void _resetScan() {
     setState(() {
       _showResult = false;
+      _reading = null;
     });
   }
 
   @override
   void dispose() {
     _sampleIdController.dispose();
+    _deviceDataService.dispose();
     super.dispose();
   }
 
@@ -407,6 +421,12 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   }
 
   Widget _buildMetricsCard() {
+    final reading = _reading;
+
+    if (reading == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -418,25 +438,33 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         children: [
           _metricRow(
             _text('Moisture', 'नमी'),
-            '64.2%',
+            '${reading.moisture.toStringAsFixed(1)}%',
             _text('Normal', 'सामान्य'),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Crude protein', 'कच्चा प्रोटीन'),
-            '8.7%',
+            '${reading.protein.toStringAsFixed(1)}%',
             _text('Good', 'अच्छा'),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fibre', 'फाइबर'),
-            '23.4%',
+            '${reading.fiber.toStringAsFixed(1)}%',
             _text('Normal', 'सामान्य'),
           ),
           const Divider(height: 25),
-          _metricRow(_text('Fat', 'वसा'), '3.1%', _text('Good', 'अच्छा')),
+          _metricRow(
+            _text('Fat', 'वसा'),
+            '${reading.fat.toStringAsFixed(1)}%',
+            _text('Good', 'अच्छा'),
+          ),
           const Divider(height: 25),
-          _metricRow(_text('Ash', 'राख'), '5.8%', _text('Normal', 'सामान्य')),
+          _metricRow(
+            _text('Ash', 'राख'),
+            '${reading.ash.toStringAsFixed(1)}%',
+            _text('Normal', 'सामान्य'),
+          ),
         ],
       ),
     );
