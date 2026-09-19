@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 import '../../core/models/device_reading.dart';
 import '../../core/services/device_data_service.dart';
@@ -23,6 +24,7 @@ class NirAnalysisScreen extends StatefulWidget {
 class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   final TextEditingController _sampleIdController = TextEditingController();
   final DeviceDataService _deviceDataService = DeviceDataService();
+  final FlutterTts _flutterTts = FlutterTts();
 
   String _selectedFeed = 'Maize Silage';
   bool _isScanning = false;
@@ -31,6 +33,26 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _configureVoice();
+  }
+
+  Future<void> _configureVoice() async {
+    await _flutterTts.setLanguage(widget.isHindi ? 'hi-IN' : 'en-IN');
+    await _flutterTts.setSpeechRate(0.45);
+    await _flutterTts.setPitch(1.0);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.awaitSpeakCompletion(true);
+  }
+
+  Future<void> _speak(String english, String hindi) async {
+    await _flutterTts.stop();
+    await _flutterTts.setLanguage(widget.isHindi ? 'hi-IN' : 'en-IN');
+    await _flutterTts.speak(_text(english, hindi));
   }
 
   Future<void> _startScan() async {
@@ -101,6 +123,19 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
             fontWeight: FontWeight.w800,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: _text('Hear instructions', 'निर्देश सुनें'),
+            icon: const Icon(Icons.volume_up_rounded),
+            onPressed: () {
+              _speak(
+                'Place the feed sample inside the chamber. Close the chamber, then press and hold the scan button.',
+                'चारे का नमूना चैम्बर में रखें। चैम्बर बंद करें, फिर स्कैन बटन को दबाकर रखें।',
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: Center(
