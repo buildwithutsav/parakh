@@ -1361,6 +1361,158 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  List<({IconData icon, String title, String detail})> _feedOptions(
+    DeviceReading reading,
+  ) {
+    final options = <({IconData icon, String title, String detail})>[];
+
+    if (reading.protein < 9) {
+      options.add((
+        icon: Icons.grass_rounded,
+        title: _text('Protein sources', 'प्रोटीन स्रोत'),
+        detail: _text(
+          'Discuss leguminous green fodder or a suitable locally available oilseed cake.',
+          'दलहनी हरे चारे या उपयुक्त स्थानीय खली के उपयोग पर विशेषज्ञ से चर्चा करें।',
+        ),
+      ));
+    }
+
+    if (reading.fiber < 25 || _productionGoal == 'milk_fat') {
+      options.add((
+        icon: Icons.eco_rounded,
+        title: _text('Effective fibre', 'प्रभावी फाइबर'),
+        detail: _text(
+          'Review good-quality roughage, hay or suitable dry fodder for the complete ration.',
+          'पूर्ण राशन के लिए अच्छी गुणवत्ता वाले मोटे चारे, भूसे या उपयुक्त सूखे चारे की समीक्षा करें।',
+        ),
+      ));
+    }
+
+    if (_productionGoal == 'weight_gain' || _productionGoal == 'milk_yield') {
+      options.add((
+        icon: Icons.bolt_rounded,
+        title: _text('Energy balance', 'ऊर्जा संतुलन'),
+        detail: _text(
+          'Ask whether locally available grains, bran or other approved energy ingredients are needed.',
+          'पूछें कि स्थानीय अनाज, चोकर या अन्य अनुमोदित ऊर्जा सामग्री की आवश्यकता है या नहीं।',
+        ),
+      ));
+    }
+
+    if (reading.ash < 4 || reading.ash > 8) {
+      options.add((
+        icon: Icons.science_outlined,
+        title: _text('Mineral review', 'खनिज समीक्षा'),
+        detail: _text(
+          'Have mineral balance and possible soil or foreign-material contamination reviewed before adding supplements.',
+          'पूरक देने से पहले खनिज संतुलन और मिट्टी या बाहरी पदार्थ की संभावित मिलावट की समीक्षा कराएँ।',
+        ),
+      ));
+    }
+
+    if (reading.moisture < 55 || reading.moisture > 75) {
+      options.add((
+        icon: Icons.water_drop_outlined,
+        title: _text('Moisture and storage', 'नमी और भंडारण'),
+        detail: _text(
+          'Review storage, spoilage risk and dry-matter intake instead of directly adding water.',
+          'सीधे पानी मिलाने के बजाय भंडारण, खराब होने के जोखिम और सूखे पदार्थ के सेवन की समीक्षा करें।',
+        ),
+      ));
+    }
+
+    if (options.isEmpty) {
+      options.add((
+        icon: Icons.check_circle_outline_rounded,
+        title: _text('Maintain balance', 'संतुलन बनाए रखें'),
+        detail: _text(
+          'No specific addition is suggested from this screening. Continue the balanced ration and monitor the animal.',
+          'इस स्क्रीनिंग से किसी विशेष सामग्री को जोड़ने का सुझाव नहीं है। संतुलित राशन जारी रखें और पशु की निगरानी करें।',
+        ),
+      ));
+    }
+
+    return options;
+  }
+
+  Widget _buildFeedOptions(DeviceReading reading, Color color) {
+    final options = _feedOptions(reading);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _text(
+            'What could be discussed?',
+            'किन चीजों पर चर्चा की जा सकती है?',
+          ),
+          style: TextStyle(color: color, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _text(
+            'Possible ingredient categories—not a feeding prescription.',
+            'संभावित सामग्री श्रेणियाँ—यह पशु आहार का नुस्खा नहीं है।',
+          ),
+          style: TextStyle(
+            color: color.withValues(alpha: 0.85),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...options.map(
+          (option) => Padding(
+            padding: const EdgeInsets.only(bottom: 11),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(option.icon, color: color, size: 20),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        option.title,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        option.detail,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Text(
+          _text(
+            'The exact ingredient and quantity must be decided from the complete ration by a qualified livestock nutrition professional.',
+            'सटीक सामग्री और मात्रा का निर्णय पूर्ण राशन के आधार पर योग्य पशु पोषण विशेषज्ञ द्वारा किया जाना चाहिए।',
+          ),
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRecommendationCard() {
     final reading = _reading;
 
@@ -1513,6 +1665,11 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                   color: foregroundColor.withValues(alpha: 0.25),
                 ),
                 _buildScoreBreakdown(reading, foregroundColor),
+                Divider(
+                  height: 24,
+                  color: foregroundColor.withValues(alpha: 0.25),
+                ),
+                _buildFeedOptions(reading, foregroundColor),
               ],
             ),
           ),
