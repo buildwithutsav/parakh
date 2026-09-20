@@ -1289,6 +1289,78 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     }
   }
 
+  Widget _buildScoreBreakdown(DeviceReading reading, Color color) {
+    final adjustments = _scoreAdjustments(reading);
+    final score = _goalSuitabilityScore(reading);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _text('Why this score?', 'यह स्कोर क्यों मिला?'),
+          style: TextStyle(color: color, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        if (adjustments.isEmpty)
+          Text(
+            _text(
+              'No deductions were applied under the current prototype screening rules.',
+              'वर्तमान प्रोटोटाइप स्क्रीनिंग नियमों के अनुसार कोई अंक नहीं काटे गए।',
+            ),
+            style: TextStyle(color: color, fontSize: 13, height: 1.4),
+          )
+        else
+          ...adjustments.map(
+            (adjustment) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: color,
+                    size: 17,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      adjustment.$1,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '-${adjustment.$2}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 5),
+        Text(
+          _text(
+            'Prototype calculation: 100 − deductions = $score/100',
+            'प्रोटोटाइप गणना: 100 − कटौती = $score/100',
+          ),
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRecommendationCard() {
     final reading = _reading;
 
@@ -1401,7 +1473,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _text('Recommendation', 'सुझाव'),
+                  _text('Parakh Feed Assistant', 'परख फीड सहायक'),
                   style: TextStyle(
                     color: foregroundColor,
                     fontWeight: FontWeight.w800,
@@ -1436,6 +1508,11 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                     height: 1.4,
                   ),
                 ),
+                Divider(
+                  height: 24,
+                  color: foregroundColor.withValues(alpha: 0.25),
+                ),
+                _buildScoreBreakdown(reading, foregroundColor),
               ],
             ),
           ),
