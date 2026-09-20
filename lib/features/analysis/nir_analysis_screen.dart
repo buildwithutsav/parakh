@@ -795,20 +795,111 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   }
 
   Widget _buildRecommendationCard() {
+    final reading = _reading;
+
+    if (reading == null) {
+      return const SizedBox.shrink();
+    }
+
+    final risk = _overallRisk(reading);
+    final concerns = <String>[];
+
+    if (_riskLevel(
+          value: reading.moisture,
+          goodMin: 60,
+          goodMax: 70,
+          cautionMin: 55,
+          cautionMax: 75,
+        ) >
+        0) {
+      concerns.add(_text('moisture', 'नमी'));
+    }
+
+    if (_riskLevel(
+          value: reading.protein,
+          goodMin: 7,
+          goodMax: 10,
+          cautionMin: 5,
+          cautionMax: 12,
+        ) >
+        0) {
+      concerns.add(_text('protein', 'प्रोटीन'));
+    }
+
+    if (_riskLevel(
+          value: reading.fiber,
+          goodMin: 20,
+          goodMax: 30,
+          cautionMin: 15,
+          cautionMax: 35,
+        ) >
+        0) {
+      concerns.add(_text('fibre', 'फाइबर'));
+    }
+
+    if (_riskLevel(
+          value: reading.fat,
+          goodMin: 2,
+          goodMax: 5,
+          cautionMin: 1,
+          cautionMax: 6,
+        ) >
+        0) {
+      concerns.add(_text('fat', 'वसा'));
+    }
+
+    if (_riskLevel(
+          value: reading.ash,
+          goodMin: 4,
+          goodMax: 8,
+          cautionMin: 3,
+          cautionMax: 10,
+        ) >
+        0) {
+      concerns.add(_text('ash', 'राख'));
+    }
+
+    final String recommendation;
+    final Color backgroundColor;
+    final Color foregroundColor;
+    final IconData icon;
+
+    if (risk == 2) {
+      recommendation = _text(
+        'Keep this feed sample separate. Retest it and consult a livestock nutrition expert before feeding. Check: ${concerns.join(', ')}.',
+        'इस चारे के नमूने को अलग रखें। दोबारा जाँच करें और पशु को खिलाने से पहले पशु पोषण विशेषज्ञ से सलाह लें। जाँचें: ${concerns.join(', ')}।',
+      );
+      backgroundColor = const Color(0xFFFBE8E4);
+      foregroundColor = const Color(0xFF8F352C);
+      icon = Icons.report_problem_rounded;
+    } else if (risk == 1) {
+      recommendation = _text(
+        'Some values need attention. Review ${concerns.join(', ')} and test the sample again before regular use.',
+        'कुछ मानों पर ध्यान देने की आवश्यकता है। ${concerns.join(', ')} की समीक्षा करें और नियमित उपयोग से पहले नमूने की दोबारा जाँच करें।',
+      );
+      backgroundColor = const Color(0xFFFFF1CF);
+      foregroundColor = const Color(0xFF795315);
+      icon = Icons.warning_amber_rounded;
+    } else {
+      recommendation = _text(
+        'The tested values are within the expected range. Continue normal use and follow your livestock nutrition plan.',
+        'जाँचे गए मान अपेक्षित सीमा में हैं। सामान्य उपयोग जारी रखें और अपनी पशु पोषण योजना का पालन करें।',
+      );
+      backgroundColor = const Color(0xFFE3F1E6);
+      foregroundColor = const Color(0xFF286B3E);
+      icon = Icons.check_circle_rounded;
+    }
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF1FA),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.lightbulb_rounded,
-            color: Color(0xFF3D70A8),
-            size: 27,
-          ),
+          Icon(icon, color: foregroundColor, size: 27),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -816,19 +907,16 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
               children: [
                 Text(
                   _text('Recommendation', 'सुझाव'),
-                  style: const TextStyle(
-                    color: Color(0xFF294F78),
+                  style: TextStyle(
+                    color: foregroundColor,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  _text(
-                    'The feed quality is suitable. Add a balanced mineral mixture as advised by a livestock nutrition expert.',
-                    'चारे की गुणवत्ता उपयुक्त है। पशु पोषण विशेषज्ञ की सलाह के अनुसार संतुलित खनिज मिश्रण मिलाएँ।',
-                  ),
-                  style: const TextStyle(
-                    color: Color(0xFF3D5E7C),
+                  recommendation,
+                  style: TextStyle(
+                    color: foregroundColor,
                     fontSize: 13,
                     height: 1.4,
                   ),
