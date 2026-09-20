@@ -44,7 +44,7 @@ class DeviceReading {
       ph: _readDouble(json, 'ph'),
       temperature: _readDouble(json, 'temperature'),
       status: _readString(json, 'status', fallback: 'complete'),
-      receivedAt: DateTime.now(),
+      receivedAt: _readDateTime(json, 'receivedAt'),
     );
   }
 
@@ -113,5 +113,15 @@ class DeviceReading {
     }
 
     return 0;
+  }
+
+  static DateTime _readDateTime(Map<String, dynamic> json, String key) {
+    final value = json[key];
+
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+
+    return DateTime.now();
   }
 }

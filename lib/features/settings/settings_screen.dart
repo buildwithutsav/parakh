@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/storage/test_history_storage.dart';
 import '../../core/theme/parakh_colors.dart';
+import '../calibration/calibration_screen.dart';
 import '../onboarding/onboarding_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -501,6 +502,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onTap: _showReplayTutorialDialog,
           ),
+          _settingsTile(
+            icon: Icons.biotech_rounded,
+            iconColor: const Color(0xFF3D70A8),
+            iconBackground: const Color(0xFFEAF1FA),
+            title: _text('Calibration workspace', 'कैलिब्रेशन कार्यक्षेत्र'),
+            subtitle: _text(
+              'Prototype/admin use • Compare scans with lab results',
+              'प्रोटोटाइप/एडमिन उपयोग • स्कैन की लैब परिणामों से तुलना करें',
+            ),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => CalibrationScreen(isHindi: _isHindi),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1, indent: 76),
           const Divider(height: 1, indent: 76),
           _settingsTile(
             icon: Icons.science_rounded,
