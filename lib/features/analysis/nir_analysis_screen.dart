@@ -106,6 +106,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   void dispose() {
     _sampleIdController.dispose();
     _deviceDataService.dispose();
+    _flutterTts.stop();
     super.dispose();
   }
 
@@ -427,25 +428,134 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  int _riskLevel({
+    required double value,
+    required double goodMin,
+    required double goodMax,
+    required double cautionMin,
+    required double cautionMax,
+  }) {
+    if (value >= goodMin && value <= goodMax) return 0;
+    if (value >= cautionMin && value <= cautionMax) return 1;
+    return 2;
+  }
+
+  List<int> _readingRiskLevels(DeviceReading reading) {
+    return [
+      _riskLevel(
+        value: reading.moisture,
+        goodMin: 60,
+        goodMax: 70,
+        cautionMin: 55,
+        cautionMax: 75,
+      ),
+      _riskLevel(
+        value: reading.protein,
+        goodMin: 7,
+        goodMax: 10,
+        cautionMin: 5,
+        cautionMax: 12,
+      ),
+      _riskLevel(
+        value: reading.fiber,
+        goodMin: 20,
+        goodMax: 30,
+        cautionMin: 15,
+        cautionMax: 35,
+      ),
+      _riskLevel(
+        value: reading.fat,
+        goodMin: 2,
+        goodMax: 5,
+        cautionMin: 1,
+        cautionMax: 6,
+      ),
+      _riskLevel(
+        value: reading.ash,
+        goodMin: 4,
+        goodMax: 8,
+        cautionMin: 3,
+        cautionMax: 10,
+      ),
+    ];
+  }
+
+  int _overallRisk(DeviceReading reading) {
+    final levels = _readingRiskLevels(reading);
+
+    if (levels.contains(2)) return 2;
+    if (levels.contains(1)) return 1;
+    return 0;
+  }
+
+  int _qualityScore(DeviceReading reading) {
+    final levels = _readingRiskLevels(reading);
+    final penalty = levels.fold<int>(
+      0,
+      (total, level) =>
+          total +
+          (level == 2
+              ? 20
+              : level == 1
+              ? 8
+              : 0),
+    );
+
+    return (100 - penalty).clamp(0, 100);
+  }
+
   Widget _buildResult() {
+    final reading = _reading;
+
+    if (reading == null) {
+      return const SizedBox.shrink();
+    }
+
+    final risk = _overallRisk(reading);
+    final score = _qualityScore(reading);
+
+    final List<Color> resultColors;
+    final Color resultAccent;
+    final IconData resultIcon;
+    final String resultLabel;
+
+    if (risk == 2) {
+      resultColors = const [Color(0xFF7A2E27), Color(0xFFB54435)];
+      resultAccent = const Color(0xFFFFC2B8);
+      resultIcon = Icons.dangerous_rounded;
+      resultLabel = _text(
+        'Poor quality • High risk',
+        'खराब गुणवत्ता • अधिक जोखिम',
+      );
+    } else if (risk == 1) {
+      resultColors = const [Color(0xFF795315), Color(0xFFB47B20)];
+      resultAccent = const Color(0xFFFFE0A3);
+      resultIcon = Icons.warning_rounded;
+      resultLabel = _text(
+        'Moderate quality • Check values',
+        'मध्यम गुणवत्ता • मान जाँचें',
+      );
+    } else {
+      resultColors = const [Color(0xFF174D35), Color(0xFF2F7650)];
+      resultAccent = const Color(0xFFBCE4C4);
+      resultIcon = Icons.verified_rounded;
+      resultLabel = _text(
+        'Good quality • Low risk',
+        'अच्छी गुणवत्ता • कम जोखिम',
+      );
+    }
     return Column(
       children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF174D35), Color(0xFF2F7650)],
-            ),
+            gradient: LinearGradient(colors: resultColors),
             borderRadius: BorderRadius.circular(22),
           ),
           child: Column(
             children: [
-              const Icon(
-                Icons.verified_rounded,
-                color: Color(0xFF90E09F),
-                size: 45,
-              ),
+              Icon(resultIcon, color: resultAccent, size: 45),
               const SizedBox(height: 10),
               Text(
                 _text('Analysis complete', 'विश्लेषण पूरा हुआ'),
@@ -462,7 +572,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
               ),
               const SizedBox(height: 17),
               Text(
-                '87/100',
+                '$score/100',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 35,
@@ -470,9 +580,9 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                 ),
               ),
               Text(
-                _text('Good quality • Low risk', 'अच्छी गुणवत्ता • कम जोखिम'),
-                style: const TextStyle(
-                  color: Color(0xFFBCE4C4),
+                resultLabel,
+                style: TextStyle(
+                  color: resultAccent,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -499,6 +609,24 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  String _metricStatus({
+    required double value,
+    required double goodMin,
+    required double goodMax,
+    required double cautionMin,
+    required double cautionMax,
+  }) {
+    if (value >= goodMin && value <= goodMax) {
+      return _text('Good', 'अच्छा');
+    }
+
+    if (value >= cautionMin && value <= cautionMax) {
+      return _text('Caution', 'सावधानी');
+    }
+
+    return _text('Poor', 'खराब');
+  }
+
   Widget _buildMetricsCard() {
     final reading = _reading;
 
@@ -518,31 +646,61 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           _metricRow(
             _text('Moisture', 'नमी'),
             '${reading.moisture.toStringAsFixed(1)}%',
-            _text('Normal', 'सामान्य'),
+            _metricStatus(
+              value: reading.moisture,
+              goodMin: 60,
+              goodMax: 70,
+              cautionMin: 55,
+              cautionMax: 75,
+            ),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Crude protein', 'कच्चा प्रोटीन'),
             '${reading.protein.toStringAsFixed(1)}%',
-            _text('Good', 'अच्छा'),
+            _metricStatus(
+              value: reading.protein,
+              goodMin: 7,
+              goodMax: 10,
+              cautionMin: 5,
+              cautionMax: 12,
+            ),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fibre', 'फाइबर'),
             '${reading.fiber.toStringAsFixed(1)}%',
-            _text('Normal', 'सामान्य'),
+            _metricStatus(
+              value: reading.fiber,
+              goodMin: 20,
+              goodMax: 30,
+              cautionMin: 15,
+              cautionMax: 35,
+            ),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fat', 'वसा'),
             '${reading.fat.toStringAsFixed(1)}%',
-            _text('Good', 'अच्छा'),
+            _metricStatus(
+              value: reading.fat,
+              goodMin: 2,
+              goodMax: 5,
+              cautionMin: 1,
+              cautionMax: 6,
+            ),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Ash', 'राख'),
             '${reading.ash.toStringAsFixed(1)}%',
-            _text('Normal', 'सामान्य'),
+            _metricStatus(
+              value: reading.ash,
+              goodMin: 4,
+              goodMax: 8,
+              cautionMin: 3,
+              cautionMax: 10,
+            ),
           ),
         ],
       ),
