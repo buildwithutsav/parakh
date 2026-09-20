@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/device_reading.dart';
 import '../../core/services/device_data_service.dart';
@@ -30,7 +31,13 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   bool _isScanning = false;
   bool _showResult = false;
   DeviceReading? _reading;
-
+  String _animalType = 'cow';
+  String _animalBreed = 'Not sure';
+  String _animalStage = 'lactating';
+  String _productionGoal = 'maintenance';
+  double? _animalWeight;
+  double? _dailyMilkYield;
+  double? _milkFatPercent;
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
   }
@@ -39,6 +46,39 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   void initState() {
     super.initState();
     _configureVoice();
+    _loadAnimalProfile();
+  }
+
+  Future<void> _loadAnimalProfile() async {
+    final preferences = await SharedPreferences.getInstance();
+
+    final animalType = preferences.getString('animalType') ?? 'cow';
+    final animalBreed = preferences.getString('animalBreed') ?? 'Not sure';
+    final animalStage = preferences.getString('animalStage') ?? 'lactating';
+    final productionGoal =
+        preferences.getString('productionGoal') ?? 'maintenance';
+
+    final animalWeight = double.tryParse(
+      preferences.getString('animalWeight') ?? '',
+    );
+    final dailyMilkYield = double.tryParse(
+      preferences.getString('dailyMilkYield') ?? '',
+    );
+    final milkFatPercent = double.tryParse(
+      preferences.getString('milkFatPercent') ?? '',
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _animalType = animalType;
+      _animalBreed = animalBreed;
+      _animalStage = animalStage;
+      _productionGoal = productionGoal;
+      _animalWeight = animalWeight;
+      _dailyMilkYield = dailyMilkYield;
+      _milkFatPercent = milkFatPercent;
+    });
   }
 
   Future<void> _configureVoice() async {
@@ -488,9 +528,10 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     return 0;
   }
 
-  int _qualityScore(DeviceReading reading) {
+  int _goalSuitabilityScore(DeviceReading reading) {
     final levels = _readingRiskLevels(reading);
-    final penalty = levels.fold<int>(
+
+    var penalty = levels.fold<int>(
       0,
       (total, level) =>
           total +
@@ -501,7 +542,150 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
               : 0),
     );
 
+    // Prototype goal-fit rules using only the currently available readings.
+    switch (_productionGoal) {
+      case 'weight_gain':
+        if (reading.protein < 9) penalty += 8;
+        if (reading.fat < 3) penalty += 5;
+        if (reading.fiber > 30) penalty += 5;
+        break;
+
+      case 'milk_yield':
+        if (reading.protein < 9) penalty += 10;
+        if (reading.fat < 3) penalty += 4;
+        break;
+
+      case 'milk_fat':
+        if (reading.fiber < 25) penalty += 10;
+        if (reading.fat < 3) penalty += 5;
+        break;
+
+      case 'maintenance':
+        break;
+    }
+
+    if (_animalStage == 'lactating' && reading.protein < 8) {
+      penalty += 5;
+    }
+
     return (100 - penalty).clamp(0, 100);
+  }
+
+  String _productionGoalLabel() {
+    switch (_productionGoal) {
+      case 'weight_gain':
+        return _text('Weight gain', 'वजन बढ़ाना');
+      case 'milk_yield':
+        return _text('Milk yield', 'दूध उत्पादन');
+      case 'milk_fat':
+        return _text('Milk fat and SNF', 'दूध वसा और SNF');
+      default:
+        return _text('Maintenance', 'सामान्य रखरखाव');
+    }
+  }
+
+  String _animalLabel() {
+    return _animalType == 'buffalo'
+        ? _text('Buffalo', 'भैंस')
+        : _text('Cow', 'गाय');
+  }
+
+  String _stageLabel() {
+    switch (_animalStage) {
+      case 'growing':
+        return _text('Growing', 'बढ़ता पशु');
+      case 'pregnant':
+        return _text('Pregnant', 'गर्भित');
+      case 'dry':
+        return _text('Dry period', 'शुष्क अवधि');
+      default:
+        return _text('Lactating', 'दूध देने वाला');
+    }
+  }
+
+  Widget _profileChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF2EC),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: ParakhColors.forestGreen),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF355743),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimalContextCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E8DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pets_rounded, color: ParakhColors.forestGreen),
+              const SizedBox(width: 9),
+              Text(
+                _text('Animal context', 'पशु की जानकारी'),
+                style: const TextStyle(
+                  color: Color(0xFF26372D),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${_animalLabel()} • $_animalBreed',
+            style: const TextStyle(color: Color(0xFF667269), fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _profileChip(Icons.flag_rounded, _productionGoalLabel()),
+              _profileChip(Icons.timeline_rounded, _stageLabel()),
+              if (_animalWeight != null)
+                _profileChip(
+                  Icons.monitor_weight_outlined,
+                  '${_animalWeight!.toStringAsFixed(0)} kg',
+                ),
+              if (_animalStage == 'lactating' && _dailyMilkYield != null)
+                _profileChip(
+                  Icons.water_drop_outlined,
+                  '${_dailyMilkYield!.toStringAsFixed(1)} L/day',
+                ),
+              if (_animalStage == 'lactating' && _milkFatPercent != null)
+                _profileChip(
+                  Icons.percent_rounded,
+                  '${_milkFatPercent!.toStringAsFixed(1)}% milk fat',
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildResult() {
@@ -512,7 +696,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     }
 
     final risk = _overallRisk(reading);
-    final score = _qualityScore(reading);
+    final score = _goalSuitabilityScore(reading);
 
     final List<Color> resultColors;
     final Color resultAccent;
@@ -579,6 +763,25 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              const SizedBox(height: 3),
+              Text(
+                _text('Goal Suitability Index', 'लक्ष्य उपयुक्तता सूचकांक'),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                _productionGoalLabel(),
+                style: TextStyle(
+                  color: resultAccent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 resultLabel,
                 style: TextStyle(
@@ -589,6 +792,10 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 18),
+        _buildAnimalContextCard(),
+        const SizedBox(height: 14),
+        _buildScreeningNotice(),
         const SizedBox(height: 18),
         _buildMetricsCard(),
         const SizedBox(height: 18),
@@ -791,6 +998,43 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildScreeningNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E2),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE8C979)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Color(0xFF8A6418),
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _text(
+                'Estimated screening guidance based on the available sensor readings and animal profile. This is not a laboratory-certified result or a complete ration formulation.',
+                'यह उपलब्ध सेंसर रीडिंग और पशु प्रोफाइल पर आधारित अनुमानित स्क्रीनिंग मार्गदर्शन है। यह प्रयोगशाला-प्रमाणित परिणाम या पूर्ण राशन निर्माण नहीं है।',
+              ),
+              style: const TextStyle(
+                color: Color(0xFF74591E),
+                fontSize: 12,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
