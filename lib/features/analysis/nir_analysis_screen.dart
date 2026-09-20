@@ -1038,6 +1038,62 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  String _goalGuidance(DeviceReading reading) {
+    switch (_productionGoal) {
+      case 'weight_gain':
+        if (reading.protein < 9 && reading.fat < 3) {
+          return _text(
+            'For the weight-gain goal, protein and energy indicators need attention. Discuss balancing the ration with suitable protein-rich fodder or oilseed cake and locally available energy sources. Confirm ingredients and quantities with a livestock nutrition expert.',
+            'वजन बढ़ाने के लक्ष्य के लिए प्रोटीन और ऊर्जा संकेतकों पर ध्यान देने की आवश्यकता है। उपयुक्त प्रोटीन युक्त चारा या खली और स्थानीय ऊर्जा स्रोतों से राशन संतुलित करने पर पशु पोषण विशेषज्ञ से चर्चा करें। सामग्री और मात्रा विशेषज्ञ से सुनिश्चित करें।',
+          );
+        }
+
+        if (reading.protein < 9) {
+          return _text(
+            'For weight gain, the protein indicator is below the prototype target. Ask an expert whether protein-rich green fodder, legumes or a suitable oilseed cake can help balance the complete ration.',
+            'वजन बढ़ाने के लिए प्रोटीन संकेतक प्रोटोटाइप लक्ष्य से कम है। विशेषज्ञ से पूछें कि प्रोटीन युक्त हरा चारा, दलहनी चारा या उपयुक्त खली पूरे राशन को संतुलित करने में मदद कर सकती है या नहीं।',
+          );
+        }
+
+        return _text(
+          'The available indicators broadly support the weight-gain goal. Maintain a balanced energy, protein, fibre and mineral supply; confirm the complete ration with an expert.',
+          'उपलब्ध संकेतक वजन बढ़ाने के लक्ष्य के लिए सामान्य रूप से उपयुक्त हैं। ऊर्जा, प्रोटीन, फाइबर और खनिजों का संतुलन बनाए रखें तथा पूर्ण राशन विशेषज्ञ से सुनिश्चित करें।',
+        );
+
+      case 'milk_yield':
+        if (reading.protein < 9) {
+          return _text(
+            'For milk production, the protein indicator needs attention. Discuss balancing protein and energy sources and using an appropriate mineral mixture with a livestock nutrition expert.',
+            'दूध उत्पादन के लिए प्रोटीन संकेतक पर ध्यान देने की आवश्यकता है। प्रोटीन और ऊर्जा स्रोतों को संतुलित करने तथा उपयुक्त खनिज मिश्रण के उपयोग पर पशु पोषण विशेषज्ञ से चर्चा करें।',
+          );
+        }
+
+        return _text(
+          'The available indicators broadly support the milk-yield goal. Continue monitoring milk output, body condition and feed intake because this scan alone cannot determine the complete ration.',
+          'उपलब्ध संकेतक दूध उत्पादन के लक्ष्य के लिए सामान्य रूप से उपयुक्त हैं। दूध उत्पादन, शरीर की स्थिति और चारा सेवन की निगरानी जारी रखें क्योंकि केवल यह स्कैन पूर्ण राशन निर्धारित नहीं कर सकता।',
+        );
+
+      case 'milk_fat':
+        if (reading.fiber < 25) {
+          return _text(
+            'For milk fat and SNF, the fibre indicator needs attention. Discuss adequate effective fibre and good-quality roughage with an expert before changing the ration.',
+            'दूध वसा और SNF के लिए फाइबर संकेतक पर ध्यान देने की आवश्यकता है। राशन बदलने से पहले पर्याप्त प्रभावी फाइबर और अच्छी गुणवत्ता वाले सूखे चारे पर विशेषज्ञ से चर्चा करें।',
+          );
+        }
+
+        return _text(
+          'The fibre indicator broadly supports the milk-fat goal. Avoid sudden ration changes and have the full ration, milk yield and milk-fat trend reviewed by an expert.',
+          'फाइबर संकेतक दूध वसा के लक्ष्य के लिए सामान्य रूप से उपयुक्त है। राशन में अचानक बदलाव न करें और पूर्ण राशन, दूध उत्पादन तथा दूध वसा की प्रवृत्ति की विशेषज्ञ से समीक्षा कराएँ।',
+        );
+
+      default:
+        return _text(
+          'For maintenance, keep the complete ration balanced and monitor body condition, appetite and health. Use expert advice before adding supplements.',
+          'सामान्य रखरखाव के लिए पूर्ण राशन संतुलित रखें और शरीर की स्थिति, भूख तथा स्वास्थ्य की निगरानी करें। पूरक आहार जोड़ने से पहले विशेषज्ञ की सलाह लें।',
+        );
+    }
+  }
+
   Widget _buildRecommendationCard() {
     final reading = _reading;
 
@@ -1159,6 +1215,26 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                 const SizedBox(height: 7),
                 Text(
                   recommendation,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+                Divider(
+                  height: 24,
+                  color: foregroundColor.withValues(alpha: 0.25),
+                ),
+                Text(
+                  _text('Goal-based guidance', 'लक्ष्य आधारित मार्गदर्शन'),
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  _goalGuidance(reading),
                   style: TextStyle(
                     color: foregroundColor,
                     fontSize: 13,
