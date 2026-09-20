@@ -10,6 +10,7 @@ import '../complete_test/complete_test_screen.dart';
 import '../history/history_screen.dart';
 import '../advice/advice_screen.dart';
 import '../settings/settings_screen.dart';
+import '../animal_profile/animal_profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -61,6 +62,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildWelcomeCard(),
+                const SizedBox(height: 16),
+                _buildAnimalProfileCard(),
                 const SizedBox(height: 22),
                 _buildSectionTitle(_text('Device status', 'डिवाइस की स्थिति')),
                 const SizedBox(height: 12),
@@ -222,6 +225,75 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Color(0xFF1B2B21),
         fontSize: 18,
         fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+
+  Widget _buildAnimalProfileCard() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(17),
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AnimalProfileScreen(isHindi: _isHindi),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(17),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: const Color(0xFFE0E8DD)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F1E9),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.pets_rounded,
+                  color: ParakhColors.forestGreen,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text('Animal profile', 'पशु प्रोफाइल'),
+                      style: const TextStyle(
+                        color: Color(0xFF26372D),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _text(
+                        'Select animal, breed and production goal',
+                        'पशु, नस्ल और उत्पादन लक्ष्य चुनें',
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFF748078),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF748078)),
+            ],
+          ),
+        ),
       ),
     );
   }
