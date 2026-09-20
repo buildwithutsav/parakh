@@ -528,36 +528,93 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     return 0;
   }
 
-  int _goalSuitabilityScore(DeviceReading reading) {
+  List<(String, int)> _scoreAdjustments(DeviceReading reading) {
+    final adjustments = <(String, int)>[];
     final levels = _readingRiskLevels(reading);
 
-    var penalty = levels.fold<int>(
-      0,
-      (total, level) =>
-          total +
-          (level == 2
-              ? 20
-              : level == 1
-              ? 8
-              : 0),
-    );
+    final metricLabels = [
+      _text('Moisture outside expected range', 'नमी अपेक्षित सीमा से बाहर'),
+      _text('Protein outside expected range', 'प्रोटीन अपेक्षित सीमा से बाहर'),
+      _text('Fibre outside expected range', 'फाइबर अपेक्षित सीमा से बाहर'),
+      _text('Fat outside expected range', 'वसा अपेक्षित सीमा से बाहर'),
+      _text('Ash outside expected range', 'राख अपेक्षित सीमा से बाहर'),
+    ];
 
-    // Prototype goal-fit rules using only the currently available readings.
+    for (var index = 0; index < levels.length; index++) {
+      final level = levels[index];
+
+      if (level == 2) {
+        adjustments.add((metricLabels[index], 20));
+      } else if (level == 1) {
+        adjustments.add((metricLabels[index], 8));
+      }
+    }
+
     switch (_productionGoal) {
       case 'weight_gain':
-        if (reading.protein < 9) penalty += 8;
-        if (reading.fat < 3) penalty += 5;
-        if (reading.fiber > 30) penalty += 5;
+        if (reading.protein < 9) {
+          adjustments.add((
+            _text(
+              'Protein below weight-gain target',
+              'प्रोटीन वजन लक्ष्य से कम',
+            ),
+            8,
+          ));
+        }
+        if (reading.fat < 3) {
+          adjustments.add((
+            _text(
+              'Fat below energy indicator target',
+              'वसा ऊर्जा संकेतक लक्ष्य से कम',
+            ),
+            5,
+          ));
+        }
+        if (reading.fiber > 30) {
+          adjustments.add((
+            _text('Fibre above weight-gain target', 'फाइबर वजन लक्ष्य से अधिक'),
+            5,
+          ));
+        }
         break;
 
       case 'milk_yield':
-        if (reading.protein < 9) penalty += 10;
-        if (reading.fat < 3) penalty += 4;
+        if (reading.protein < 9) {
+          adjustments.add((
+            _text(
+              'Protein below milk-yield target',
+              'प्रोटीन दूध उत्पादन लक्ष्य से कम',
+            ),
+            10,
+          ));
+        }
+        if (reading.fat < 3) {
+          adjustments.add((
+            _text(
+              'Fat below energy indicator target',
+              'वसा ऊर्जा संकेतक लक्ष्य से कम',
+            ),
+            4,
+          ));
+        }
         break;
 
       case 'milk_fat':
-        if (reading.fiber < 25) penalty += 10;
-        if (reading.fat < 3) penalty += 5;
+        if (reading.fiber < 25) {
+          adjustments.add((
+            _text('Fibre below milk-fat target', 'फाइबर दूध वसा लक्ष्य से कम'),
+            10,
+          ));
+        }
+        if (reading.fat < 3) {
+          adjustments.add((
+            _text(
+              'Feed fat below prototype target',
+              'चारे की वसा प्रोटोटाइप लक्ष्य से कम',
+            ),
+            5,
+          ));
+        }
         break;
 
       case 'maintenance':
@@ -565,10 +622,23 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     }
 
     if (_animalStage == 'lactating' && reading.protein < 8) {
-      penalty += 5;
+      adjustments.add((
+        _text(
+          'Low protein for lactating stage',
+          'दूध देने की अवस्था के लिए कम प्रोटीन',
+        ),
+        5,
+      ));
     }
 
-    return (100 - penalty).clamp(0, 100);
+    return adjustments;
+  }
+
+  int _goalSuitabilityScore(DeviceReading reading) {
+    final totalPenalty = _scoreAdjustments(reading)
+        .fold<int>(0, (total, adjustment) => total + adjustment.$2);
+
+    return (100 - totalPenalty).clamp(0, 100);
   }
 
   String _productionGoalLabel() {
@@ -688,6 +758,116 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  Widget _scoreBreakdownRow({
+    required String label,
+    required String value,
+    bool isFinal = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: const Color(0xFF566158),
+                fontSize: 13,
+                fontWeight: isFinal ? FontWeight.w800 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: isFinal
+                  ? ParakhColors.forestGreen
+                  : const Color(0xFF8F352C),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreExplanation(DeviceReading reading) {
+    final adjustments = _scoreAdjustments(reading);
+    final score = _goalSuitabilityScore(reading);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E8DD)),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        leading: const Icon(
+          Icons.calculate_outlined,
+          color: ParakhColors.forestGreen,
+        ),
+        title: Text(
+          _text('How was this score calculated?', 'यह स्कोर कैसे निकाला गया?'),
+          style: const TextStyle(
+            color: Color(0xFF26372D),
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Text(
+          _text(
+            'View the prototype rules and deductions',
+            'प्रोटोटाइप नियम और कटौती देखें',
+          ),
+          style: const TextStyle(color: Color(0xFF7A847D), fontSize: 12),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          _scoreBreakdownRow(
+            label: _text('Starting score', 'प्रारंभिक स्कोर'),
+            value: '100',
+          ),
+          if (adjustments.isEmpty)
+            _scoreBreakdownRow(
+              label: _text(
+                'No rule-based deductions',
+                'कोई नियम आधारित कटौती नहीं',
+              ),
+              value: '0',
+            ),
+          for (final adjustment in adjustments)
+            _scoreBreakdownRow(
+              label: adjustment.$1,
+              value: '-${adjustment.$2}',
+            ),
+          const Divider(height: 18),
+          _scoreBreakdownRow(
+            label: _text('Goal Suitability Index', 'लक्ष्य उपयुक्तता सूचकांक'),
+            value: '$score/100',
+            isFinal: true,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _text(
+              'These prototype thresholds must be calibrated and validated against reference laboratory results before field claims are made.',
+              'मैदानी दावे करने से पहले इन प्रोटोटाइप सीमाओं को संदर्भ प्रयोगशाला परिणामों के अनुसार कैलिब्रेट और सत्यापित करना आवश्यक है।',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF7A847D),
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResult() {
     final reading = _reading;
 
@@ -796,6 +976,8 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         _buildAnimalContextCard(),
         const SizedBox(height: 14),
         _buildScreeningNotice(),
+        const SizedBox(height: 14),
+        _buildScoreExplanation(reading),
         const SizedBox(height: 18),
         _buildMetricsCard(),
         const SizedBox(height: 18),
