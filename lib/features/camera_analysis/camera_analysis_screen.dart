@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/models/camera_analysis_result.dart';
 import '../../core/theme/parakh_colors.dart';
 
 class CameraAnalysisScreen extends StatefulWidget {
@@ -18,6 +19,8 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _imageBytes;
+  CameraAnalysisResult? _analysisResult;
+  String _selectedImageSource = 'unknown';
   bool _isAnalysing = false;
   bool _showResult = false;
 
@@ -41,6 +44,10 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
 
       setState(() {
         _imageBytes = bytes;
+        _selectedImageSource = source == ImageSource.camera
+            ? 'camera'
+            : 'gallery';
+        _analysisResult = null;
         _showResult = false;
       });
     } catch (_) {
@@ -85,6 +92,9 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
     if (!mounted) return;
 
     setState(() {
+      _analysisResult = CameraAnalysisResult.prototype(
+        imageSource: _selectedImageSource,
+      );
       _isAnalysing = false;
       _showResult = true;
     });
@@ -93,6 +103,8 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   void _clearImage() {
     setState(() {
       _imageBytes = null;
+      _analysisResult = null;
+      _selectedImageSource = 'unknown';
       _showResult = false;
     });
   }
@@ -315,6 +327,17 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   }
 
   Widget _buildResultCard() {
+    final result = _analysisResult;
+
+    if (result == null) {
+      return const SizedBox.shrink();
+    }
+
+    final sandFinding = result.findingFor('sand_or_soil');
+    final stoneFinding = result.findingFor('stones');
+    final mouldFinding = result.findingFor('mould');
+    final foreignFinding = result.findingFor('foreign_material');
+
     return Container(
       padding: const EdgeInsets.all(19),
       decoration: BoxDecoration(
@@ -331,12 +354,12 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                 width: 45,
                 height: 45,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFE3F1E6),
+                  color: Color(0xFFFFF1CF),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF32834C),
+                  Icons.science_outlined,
+                  color: Color(0xFF9A6815),
                 ),
               ),
               const SizedBox(width: 12),
@@ -346,8 +369,8 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                   children: [
                     Text(
                       _text(
-                        'Visual analysis complete',
-                        'दृश्य विश्लेषण पूरा हुआ',
+                        'Prototype visual screening',
+                        'प्रोटोटाइप दृश्य स्क्रीनिंग',
                       ),
                       style: const TextStyle(
                         color: Color(0xFF1B2B21),
@@ -357,9 +380,12 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _text('Moderate visual quality', 'मध्यम दृश्य गुणवत्ता'),
+                      _text(
+                        'AI model not connected yet',
+                        'AI मॉडल अभी कनेक्ट नहीं है',
+                      ),
                       style: const TextStyle(
-                        color: Color(0xFFC06D32),
+                        color: Color(0xFF9A6815),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -371,28 +397,67 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
           const SizedBox(height: 20),
           _resultRow(
             _text('Sand or soil', 'रेत या मिट्टी'),
-            _text('Possible traces', 'संभावित अंश'),
-            const Color(0xFFC48526),
+            _findingText(sandFinding),
+            _findingColor(sandFinding),
           ),
           const Divider(height: 25),
           _resultRow(
             _text('Stones', 'पत्थर'),
-            _text('Not detected', 'नहीं मिले'),
-            const Color(0xFF32834C),
+            _findingText(stoneFinding),
+            _findingColor(stoneFinding),
           ),
           const Divider(height: 25),
           _resultRow(
-            _text('Mould', 'फफूंद'),
-            _text('Not detected', 'नहीं मिली'),
-            const Color(0xFF32834C),
+            _text('Mould', 'फफूँद'),
+            _findingText(mouldFinding),
+            _findingColor(mouldFinding),
           ),
           const Divider(height: 25),
           _resultRow(
             _text('Foreign material', 'बाहरी पदार्थ'),
-            _text('Low', 'कम'),
-            const Color(0xFF32834C),
+            _findingText(foreignFinding),
+            _findingColor(foreignFinding),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F4EF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                _metadataItem(
+                  Icons.image_outlined,
+                  _text('Image source', 'तस्वीर स्रोत'),
+                  result.imageSource,
+                ),
+                _metadataItem(
+                  Icons.model_training_rounded,
+                  _text('Model', 'मॉडल'),
+                  result.modelVersion,
+                ),
+                _metadataItem(
+                  Icons.fact_check_outlined,
+                  _text('Validation', 'सत्यापन'),
+                  result.isValidated
+                      ? _text('Validated', 'सत्यापित')
+                      : _text('Not validated', 'सत्यापित नहीं'),
+                ),
+                _metadataItem(
+                  Icons.percent_rounded,
+                  _text('Confidence', 'विश्वसनीयता'),
+                  result.overallConfidence == null
+                      ? _text('Not available', 'उपलब्ध नहीं')
+                      : '${(result.overallConfidence! * 100).toStringAsFixed(1)}%',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(15),
             decoration: BoxDecoration(
@@ -407,8 +472,8 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                 Expanded(
                   child: Text(
                     _text(
-                      'Sieve the feed before use and remove visible soil or foreign material. Confirm doubtful samples manually.',
-                      'उपयोग से पहले चारे को छानें और दिखाई देने वाली मिट्टी या बाहरी पदार्थ हटाएँ। संदिग्ध नमूनों की मैन्युअल जाँच करें।',
+                      'Inspect the actual feed manually. Sieve it when appropriate and separate samples with visible mould, soil, stones or foreign material for expert review.',
+                      'वास्तविक चारे की मैन्युअल जाँच करें। उपयुक्त होने पर इसे छानें और दिखाई देने वाली फफूँद, मिट्टी, पत्थर या बाहरी पदार्थ वाले नमूनों को विशेषज्ञ समीक्षा के लिए अलग रखें।',
                     ),
                     style: const TextStyle(
                       color: Color(0xFF3D5E7C),
@@ -420,8 +485,71 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          Text(
+            _text(
+              'Current findings are simulated placeholders for interface testing. They are not predictions from the selected image.',
+              'वर्तमान निष्कर्ष इंटरफेस परीक्षण के लिए सिम्युलेटेड प्लेसहोल्डर हैं। ये चुनी गई तस्वीर से प्राप्त भविष्यवाणियाँ नहीं हैं।',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF8F352C),
+              fontSize: 11,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  String _findingText(CameraFinding? finding) {
+    switch (finding?.level) {
+      case 'not_detected':
+        return _text('Not detected', 'नहीं मिला');
+      case 'possible':
+        return _text('Possible trace', 'संभावित अंश');
+      case 'low':
+        return _text('Low', 'कम');
+      case 'medium':
+        return _text('Medium', 'मध्यम');
+      case 'high':
+        return _text('High', 'अधिक');
+      default:
+        return _text('Not available', 'उपलब्ध नहीं');
+    }
+  }
+
+  Color _findingColor(CameraFinding? finding) {
+    switch (finding?.level) {
+      case 'high':
+        return const Color(0xFFB54435);
+      case 'possible':
+      case 'medium':
+        return const Color(0xFF9A6815);
+      case 'not_detected':
+      case 'low':
+        return const Color(0xFF32834C);
+      default:
+        return const Color(0xFF7A847D);
+    }
+  }
+
+  Widget _metadataItem(IconData icon, String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF607067)),
+        const SizedBox(width: 5),
+        Text(
+          '$label: $value',
+          style: const TextStyle(
+            color: Color(0xFF607067),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
