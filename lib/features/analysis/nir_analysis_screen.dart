@@ -7,7 +7,7 @@ import '../../core/models/device_reading.dart';
 import '../../core/services/device_data_service.dart';
 import '../../core/models/calibration_record.dart';
 import '../../core/storage/calibration_storage.dart';
-
+import '../../core/models/feed_reference_profile.dart';
 import '../../core/theme/parakh_colors.dart';
 
 class NirAnalysisScreen extends StatefulWidget {
@@ -113,7 +113,20 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       );
       return;
     }
-
+    if (FeedReferenceProfile.forFeed(_selectedFeed) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'This feed type does not have a validated reference profile yet. Select a supported feed type.',
+              'इस चारे के प्रकार के लिए अभी मान्य संदर्भ प्रोफाइल उपलब्ध नहीं है। समर्थित चारे का प्रकार चुनें।',
+            ),
+          ),
+          backgroundColor: const Color(0xFF9A6815),
+        ),
+      );
+      return;
+    }
     FocusScope.of(context).unfocus();
 
     setState(() {
@@ -318,6 +331,10 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                 value: 'Concentrate Feed',
                 child: Text('Concentrate Feed'),
               ),
+              DropdownMenuItem(
+                value: 'Cattle Feed Pellets',
+                child: Text('Cattle Feed Pellets'),
+              ),
               DropdownMenuItem(value: 'Other', child: Text('Other')),
             ],
             onChanged: (value) {
@@ -481,55 +498,19 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
-  int _riskLevel({
-    required double value,
-    required double goodMin,
-    required double goodMax,
-    required double cautionMin,
-    required double cautionMax,
-  }) {
-    if (value >= goodMin && value <= goodMax) return 0;
-    if (value >= cautionMin && value <= cautionMax) return 1;
-    return 2;
-  }
-
   List<int> _readingRiskLevels(DeviceReading reading) {
+    final profile = FeedReferenceProfile.forFeed(_selectedFeed);
+
+    if (profile == null) {
+      return const [];
+    }
+
     return [
-      _riskLevel(
-        value: reading.moisture,
-        goodMin: 60,
-        goodMax: 70,
-        cautionMin: 55,
-        cautionMax: 75,
-      ),
-      _riskLevel(
-        value: reading.protein,
-        goodMin: 7,
-        goodMax: 10,
-        cautionMin: 5,
-        cautionMax: 12,
-      ),
-      _riskLevel(
-        value: reading.fiber,
-        goodMin: 20,
-        goodMax: 30,
-        cautionMin: 15,
-        cautionMax: 35,
-      ),
-      _riskLevel(
-        value: reading.fat,
-        goodMin: 2,
-        goodMax: 5,
-        cautionMin: 1,
-        cautionMax: 6,
-      ),
-      _riskLevel(
-        value: reading.ash,
-        goodMin: 4,
-        goodMax: 8,
-        cautionMin: 3,
-        cautionMax: 10,
-      ),
+      profile.moisture.riskLevel(reading.moisture),
+      profile.protein.riskLevel(reading.protein),
+      profile.fiber.riskLevel(reading.fiber),
+      profile.fat.riskLevel(reading.fat),
+      profile.ash.riskLevel(reading.ash),
     ];
   }
 
@@ -1013,16 +994,15 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
 
   String _metricStatus({
     required double value,
-    required double goodMin,
-    required double goodMax,
-    required double cautionMin,
-    required double cautionMax,
+    required MetricReferenceBand band,
   }) {
-    if (value >= goodMin && value <= goodMax) {
+    final level = band.riskLevel(value);
+
+    if (level == 0) {
       return _text('Good', 'अच्छा');
     }
 
-    if (value >= cautionMin && value <= cautionMax) {
+    if (level == 1) {
       return _text('Caution', 'सावधानी');
     }
 
@@ -1031,8 +1011,9 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
 
   Widget _buildMetricsCard() {
     final reading = _reading;
+    final profile = FeedReferenceProfile.forFeed(_selectedFeed);
 
-    if (reading == null) {
+    if (reading == null || profile == null) {
       return const SizedBox.shrink();
     }
 
@@ -1044,65 +1025,53 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         border: Border.all(color: const Color(0xFFE0E8DD)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            _text('Feed-specific assessment', 'चारा-विशिष्ट मूल्यांकन'),
+            style: const TextStyle(
+              color: Color(0xFF26372D),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            profile.referenceLabel,
+            style: const TextStyle(
+              color: Color(0xFF7A847D),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Divider(height: 25),
           _metricRow(
             _text('Moisture', 'नमी'),
             '${reading.moisture.toStringAsFixed(1)}%',
-            _metricStatus(
-              value: reading.moisture,
-              goodMin: 60,
-              goodMax: 70,
-              cautionMin: 55,
-              cautionMax: 75,
-            ),
+            _metricStatus(value: reading.moisture, band: profile.moisture),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Crude protein', 'कच्चा प्रोटीन'),
             '${reading.protein.toStringAsFixed(1)}%',
-            _metricStatus(
-              value: reading.protein,
-              goodMin: 7,
-              goodMax: 10,
-              cautionMin: 5,
-              cautionMax: 12,
-            ),
+            _metricStatus(value: reading.protein, band: profile.protein),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fibre', 'फाइबर'),
             '${reading.fiber.toStringAsFixed(1)}%',
-            _metricStatus(
-              value: reading.fiber,
-              goodMin: 20,
-              goodMax: 30,
-              cautionMin: 15,
-              cautionMax: 35,
-            ),
+            _metricStatus(value: reading.fiber, band: profile.fiber),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fat', 'वसा'),
             '${reading.fat.toStringAsFixed(1)}%',
-            _metricStatus(
-              value: reading.fat,
-              goodMin: 2,
-              goodMax: 5,
-              cautionMin: 1,
-              cautionMax: 6,
-            ),
+            _metricStatus(value: reading.fat, band: profile.fat),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Ash', 'राख'),
             '${reading.ash.toStringAsFixed(1)}%',
-            _metricStatus(
-              value: reading.ash,
-              goodMin: 4,
-              goodMax: 8,
-              cautionMin: 3,
-              cautionMax: 10,
-            ),
+            _metricStatus(value: reading.ash, band: profile.ash),
           ),
         ],
       ),
@@ -1234,51 +1203,65 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   }
 
   String _goalGuidance(DeviceReading reading) {
+    final profile = FeedReferenceProfile.forFeed(_selectedFeed);
+
+    if (profile == null) {
+      return _text(
+        'No reference profile is available for this feed type. Get the sample reviewed before changing the ration.',
+        'इस चारे के प्रकार के लिए संदर्भ प्रोफाइल उपलब्ध नहीं है। राशन बदलने से पहले नमूने की समीक्षा कराएँ।',
+      );
+    }
+
+    final proteinNeedsAttention =
+        profile.protein.riskLevel(reading.protein) > 0;
+    final fatNeedsAttention = profile.fat.riskLevel(reading.fat) > 0;
+    final fibreNeedsAttention = profile.fiber.riskLevel(reading.fiber) > 0;
+
     switch (_productionGoal) {
       case 'weight_gain':
-        if (reading.protein < 9 && reading.fat < 3) {
+        if (proteinNeedsAttention && fatNeedsAttention) {
           return _text(
-            'For the weight-gain goal, protein and energy indicators need attention. Discuss balancing the ration with suitable protein-rich fodder or oilseed cake and locally available energy sources. Confirm ingredients and quantities with a livestock nutrition expert.',
-            'वजन बढ़ाने के लक्ष्य के लिए प्रोटीन और ऊर्जा संकेतकों पर ध्यान देने की आवश्यकता है। उपयुक्त प्रोटीन युक्त चारा या खली और स्थानीय ऊर्जा स्रोतों से राशन संतुलित करने पर पशु पोषण विशेषज्ञ से चर्चा करें। सामग्री और मात्रा विशेषज्ञ से सुनिश्चित करें।',
+            'For the weight-gain goal, the protein and fat indicators need attention relative to the $_selectedFeed reference profile. Ask a livestock nutrition expert to review suitable protein and energy sources for the complete ration.',
+            'वजन बढ़ाने के लक्ष्य के लिए $_selectedFeed संदर्भ प्रोफाइल की तुलना में प्रोटीन और वसा संकेतकों पर ध्यान देने की आवश्यकता है। पूर्ण राशन के लिए उपयुक्त प्रोटीन और ऊर्जा स्रोतों की पशु पोषण विशेषज्ञ से समीक्षा कराएँ।',
           );
         }
 
-        if (reading.protein < 9) {
+        if (proteinNeedsAttention) {
           return _text(
-            'For weight gain, the protein indicator is below the prototype target. Ask an expert whether protein-rich green fodder, legumes or a suitable oilseed cake can help balance the complete ration.',
-            'वजन बढ़ाने के लिए प्रोटीन संकेतक प्रोटोटाइप लक्ष्य से कम है। विशेषज्ञ से पूछें कि प्रोटीन युक्त हरा चारा, दलहनी चारा या उपयुक्त खली पूरे राशन को संतुलित करने में मदद कर सकती है या नहीं।',
+            'For the weight-gain goal, the protein indicator needs attention relative to the selected feed profile. Ask an expert whether protein-rich fodder, legumes or a suitable oilseed cake can help balance the complete ration.',
+            'वजन बढ़ाने के लक्ष्य के लिए चयनित चारा प्रोफाइल की तुलना में प्रोटीन संकेतक पर ध्यान देने की आवश्यकता है। विशेषज्ञ से पूछें कि प्रोटीनयुक्त चारा, दलहनी चारा या उपयुक्त खली पूरे राशन को संतुलित करने में मदद कर सकती है या नहीं।',
           );
         }
 
         return _text(
-          'The available indicators broadly support the weight-gain goal. Maintain a balanced energy, protein, fibre and mineral supply; confirm the complete ration with an expert.',
-          'उपलब्ध संकेतक वजन बढ़ाने के लक्ष्य के लिए सामान्य रूप से उपयुक्त हैं। ऊर्जा, प्रोटीन, फाइबर और खनिजों का संतुलन बनाए रखें तथा पूर्ण राशन विशेषज्ञ से सुनिश्चित करें।',
+          'The available indicators broadly support the weight-gain goal for the selected feed profile. Confirm the complete energy, protein, fibre and mineral balance with a livestock nutrition expert.',
+          'चयनित चारा प्रोफाइल के लिए उपलब्ध संकेतक वजन बढ़ाने के लक्ष्य का सामान्य रूप से समर्थन करते हैं। पूर्ण ऊर्जा, प्रोटीन, फाइबर और खनिज संतुलन की पशु पोषण विशेषज्ञ से पुष्टि कराएँ।',
         );
 
       case 'milk_yield':
-        if (reading.protein < 9) {
+        if (proteinNeedsAttention || fatNeedsAttention) {
           return _text(
-            'For milk production, the protein indicator needs attention. Discuss balancing protein and energy sources and using an appropriate mineral mixture with a livestock nutrition expert.',
-            'दूध उत्पादन के लिए प्रोटीन संकेतक पर ध्यान देने की आवश्यकता है। प्रोटीन और ऊर्जा स्रोतों को संतुलित करने तथा उपयुक्त खनिज मिश्रण के उपयोग पर पशु पोषण विशेषज्ञ से चर्चा करें।',
+            'For the milk-yield goal, the protein or fat indicator needs attention relative to the selected feed profile. Ask an expert to review the complete ration, energy sources and mineral mixture.',
+            'दूध उत्पादन के लक्ष्य के लिए चयनित चारा प्रोफाइल की तुलना में प्रोटीन या वसा संकेतक पर ध्यान देने की आवश्यकता है। पूर्ण राशन, ऊर्जा स्रोतों और खनिज मिश्रण की विशेषज्ञ से समीक्षा कराएँ।',
           );
         }
 
         return _text(
-          'The available indicators broadly support the milk-yield goal. Continue monitoring milk output, body condition and feed intake because this scan alone cannot determine the complete ration.',
-          'उपलब्ध संकेतक दूध उत्पादन के लक्ष्य के लिए सामान्य रूप से उपयुक्त हैं। दूध उत्पादन, शरीर की स्थिति और चारा सेवन की निगरानी जारी रखें क्योंकि केवल यह स्कैन पूर्ण राशन निर्धारित नहीं कर सकता।',
+          'The available indicators broadly support the milk-yield goal. Continue monitoring feed intake, milk output and body condition because this scan alone cannot determine the complete ration.',
+          'उपलब्ध संकेतक दूध उत्पादन के लक्ष्य का सामान्य रूप से समर्थन करते हैं। चारा सेवन, दूध उत्पादन और शरीर की स्थिति की निगरानी जारी रखें क्योंकि केवल यह स्कैन पूर्ण राशन निर्धारित नहीं कर सकता।',
         );
 
       case 'milk_fat':
-        if (reading.fiber < 25) {
+        if (fibreNeedsAttention) {
           return _text(
-            'For milk fat and SNF, the fibre indicator needs attention. Discuss adequate effective fibre and good-quality roughage with an expert before changing the ration.',
-            'दूध वसा और SNF के लिए फाइबर संकेतक पर ध्यान देने की आवश्यकता है। राशन बदलने से पहले पर्याप्त प्रभावी फाइबर और अच्छी गुणवत्ता वाले सूखे चारे पर विशेषज्ञ से चर्चा करें।',
+            'For the milk-fat and SNF goal, the fibre indicator needs attention relative to the selected feed profile. Ask an expert to review effective fibre and good-quality roughage before changing the ration.',
+            'दूध वसा और SNF के लक्ष्य के लिए चयनित चारा प्रोफाइल की तुलना में फाइबर संकेतक पर ध्यान देने की आवश्यकता है। राशन बदलने से पहले प्रभावी फाइबर और अच्छी गुणवत्ता वाले सूखे चारे की विशेषज्ञ से समीक्षा कराएँ।',
           );
         }
 
         return _text(
-          'The fibre indicator broadly supports the milk-fat goal. Avoid sudden ration changes and have the full ration, milk yield and milk-fat trend reviewed by an expert.',
-          'फाइबर संकेतक दूध वसा के लक्ष्य के लिए सामान्य रूप से उपयुक्त है। राशन में अचानक बदलाव न करें और पूर्ण राशन, दूध उत्पादन तथा दूध वसा की प्रवृत्ति की विशेषज्ञ से समीक्षा कराएँ।',
+          'The fibre indicator broadly supports the milk-fat goal for the selected feed profile. Avoid sudden ration changes and have the complete ration and milk-fat trend reviewed by an expert.',
+          'चयनित चारा प्रोफाइल के लिए फाइबर संकेतक दूध वसा लक्ष्य का सामान्य रूप से समर्थन करता है। राशन में अचानक बदलाव न करें और पूर्ण राशन तथा दूध वसा की प्रवृत्ति की विशेषज्ञ से समीक्षा कराएँ।',
         );
 
       default:
@@ -1289,134 +1272,91 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     }
   }
 
-  Widget _buildScoreBreakdown(DeviceReading reading, Color color) {
-    final adjustments = _scoreAdjustments(reading);
-    final score = _goalSuitabilityScore(reading);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _text('Why this score?', 'यह स्कोर क्यों मिला?'),
-          style: TextStyle(color: color, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        if (adjustments.isEmpty)
-          Text(
-            _text(
-              'No deductions were applied under the current prototype screening rules.',
-              'वर्तमान प्रोटोटाइप स्क्रीनिंग नियमों के अनुसार कोई अंक नहीं काटे गए।',
-            ),
-            style: TextStyle(color: color, fontSize: 13, height: 1.4),
-          )
-        else
-          ...adjustments.map(
-            (adjustment) => Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.remove_circle_outline_rounded,
-                    color: color,
-                    size: 17,
-                  ),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      adjustment.$1,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 13,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '-${adjustment.$2}',
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 5),
-        Text(
-          _text(
-            'Prototype calculation: 100 − deductions = $score/100',
-            'प्रोटोटाइप गणना: 100 − कटौती = $score/100',
-          ),
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
   List<({IconData icon, String title, String detail})> _feedOptions(
     DeviceReading reading,
   ) {
     final options = <({IconData icon, String title, String detail})>[];
+    final profile = FeedReferenceProfile.forFeed(_selectedFeed);
 
-    if (reading.protein < 9) {
+    if (profile == null) {
+      return [
+        (
+          icon: Icons.info_outline_rounded,
+          title: _text('Expert review required', 'विशेषज्ञ समीक्षा आवश्यक'),
+          detail: _text(
+            'No reference profile is available for this feed type. Do not change the ration using this screening alone.',
+            'इस चारे के प्रकार के लिए संदर्भ प्रोफाइल उपलब्ध नहीं है। केवल इस स्क्रीनिंग के आधार पर राशन न बदलें।',
+          ),
+        ),
+      ];
+    }
+
+    final proteinNeedsAttention =
+        profile.protein.riskLevel(reading.protein) > 0;
+    final fatNeedsAttention = profile.fat.riskLevel(reading.fat) > 0;
+    final fibreNeedsAttention = profile.fiber.riskLevel(reading.fiber) > 0;
+    final ashNeedsAttention = profile.ash.riskLevel(reading.ash) > 0;
+    final moistureNeedsAttention =
+        profile.moisture.riskLevel(reading.moisture) > 0;
+
+    if (proteinNeedsAttention) {
       options.add((
         icon: Icons.grass_rounded,
-        title: _text('Protein sources', 'प्रोटीन स्रोत'),
+        title: _text('Protein-source review', 'प्रोटीन स्रोत समीक्षा'),
         detail: _text(
-          'Discuss leguminous green fodder or a suitable locally available oilseed cake.',
-          'दलहनी हरे चारे या उपयुक्त स्थानीय खली के उपयोग पर विशेषज्ञ से चर्चा करें।',
+          'Discuss whether leguminous green fodder or a suitable locally available oilseed cake could help balance the complete ration.',
+          'विशेषज्ञ से चर्चा करें कि दलहनी हरा चारा या उपयुक्त स्थानीय खली पूर्ण राशन को संतुलित करने में मदद कर सकती है या नहीं।',
         ),
       ));
     }
 
-    if (reading.fiber < 25 || _productionGoal == 'milk_fat') {
+    if (fibreNeedsAttention || _productionGoal == 'milk_fat') {
       options.add((
         icon: Icons.eco_rounded,
-        title: _text('Effective fibre', 'प्रभावी फाइबर'),
+        title: _text('Effective-fibre review', 'प्रभावी फाइबर समीक्षा'),
         detail: _text(
-          'Review good-quality roughage, hay or suitable dry fodder for the complete ration.',
-          'पूर्ण राशन के लिए अच्छी गुणवत्ता वाले मोटे चारे, भूसे या उपयुक्त सूखे चारे की समीक्षा करें।',
+          'Review good-quality roughage, hay or suitable dry fodder for the complete ration. This feed reading alone cannot measure total effective fibre.',
+          'पूर्ण राशन के लिए अच्छी गुणवत्ता वाले मोटे चारे, भूसे या उपयुक्त सूखे चारे की समीक्षा करें। केवल इस चारे की रीडिंग कुल प्रभावी फाइबर को नहीं माप सकती।',
         ),
       ));
     }
 
-    if (_productionGoal == 'weight_gain' || _productionGoal == 'milk_yield') {
+    final needsEnergyReview =
+        (_productionGoal == 'weight_gain' || _productionGoal == 'milk_yield') &&
+        (proteinNeedsAttention || fatNeedsAttention);
+
+    if (needsEnergyReview) {
       options.add((
         icon: Icons.bolt_rounded,
-        title: _text('Energy balance', 'ऊर्जा संतुलन'),
+        title: _text('Energy-balance review', 'ऊर्जा संतुलन समीक्षा'),
         detail: _text(
-          'Ask whether locally available grains, bran or other approved energy ingredients are needed.',
-          'पूछें कि स्थानीय अनाज, चोकर या अन्य अनुमोदित ऊर्जा सामग्री की आवश्यकता है या नहीं।',
+          'Ask an expert to assess the complete ration before using grains, bran or another approved energy ingredient.',
+          'अनाज, चोकर या किसी अन्य अनुमोदित ऊर्जा सामग्री का उपयोग करने से पहले विशेषज्ञ से पूर्ण राशन का आकलन कराएँ।',
         ),
       ));
     }
 
-    if (reading.ash < 4 || reading.ash > 8) {
+    if (ashNeedsAttention) {
       options.add((
         icon: Icons.science_outlined,
-        title: _text('Mineral review', 'खनिज समीक्षा'),
+        title: _text(
+          'Mineral and contamination review',
+          'खनिज और मिलावट समीक्षा',
+        ),
         detail: _text(
-          'Have mineral balance and possible soil or foreign-material contamination reviewed before adding supplements.',
+          'Review mineral balance and possible soil or foreign-material contamination before adding supplements.',
           'पूरक देने से पहले खनिज संतुलन और मिट्टी या बाहरी पदार्थ की संभावित मिलावट की समीक्षा कराएँ।',
         ),
       ));
     }
 
-    if (reading.moisture < 55 || reading.moisture > 75) {
+    if (moistureNeedsAttention) {
       options.add((
         icon: Icons.water_drop_outlined,
-        title: _text('Moisture and storage', 'नमी और भंडारण'),
+        title: _text('Moisture and storage review', 'नमी और भंडारण समीक्षा'),
         detail: _text(
-          'Review storage, spoilage risk and dry-matter intake instead of directly adding water.',
-          'सीधे पानी मिलाने के बजाय भंडारण, खराब होने के जोखिम और सूखे पदार्थ के सेवन की समीक्षा करें।',
+          'Review storage conditions, spoilage risk and dry-matter intake. Do not directly add water based only on this result.',
+          'भंडारण की स्थिति, खराब होने के जोखिम और सूखे पदार्थ के सेवन की समीक्षा करें। केवल इस परिणाम के आधार पर सीधे पानी न मिलाएँ।',
         ),
       ));
     }
@@ -1426,8 +1366,8 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         icon: Icons.check_circle_outline_rounded,
         title: _text('Maintain balance', 'संतुलन बनाए रखें'),
         detail: _text(
-          'No specific addition is suggested from this screening. Continue the balanced ration and monitor the animal.',
-          'इस स्क्रीनिंग से किसी विशेष सामग्री को जोड़ने का सुझाव नहीं है। संतुलित राशन जारी रखें और पशु की निगरानी करें।',
+          'No specific ingredient category is suggested by this screening. Continue the balanced ration and monitor the animal.',
+          'इस स्क्रीनिंग से किसी विशेष सामग्री श्रेणी का सुझाव नहीं मिलता। संतुलित राशन जारी रखें और पशु की निगरानी करें।',
         ),
       ));
     }
@@ -1513,68 +1453,105 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     );
   }
 
+  Widget _buildScoreBreakdown(DeviceReading reading, Color color) {
+    final adjustments = _scoreAdjustments(reading);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _text('How this score was calculated', 'यह स्कोर कैसे बनाया गया'),
+          style: TextStyle(color: color, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        if (adjustments.isEmpty)
+          Text(
+            _text(
+              'No deductions were applied using the selected feed reference profile and production goal.',
+              'चयनित चारा संदर्भ प्रोफाइल और उत्पादन लक्ष्य के अनुसार कोई अंक नहीं काटे गए।',
+            ),
+            style: TextStyle(color: color, fontSize: 13, height: 1.4),
+          )
+        else
+          ...adjustments.map(
+            (adjustment) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: color,
+                    size: 17,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      adjustment.$1,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '-${adjustment.$2}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          _text(
+            'Prototype suitability score—not a laboratory grade.',
+            'यह प्रोटोटाइप उपयुक्तता स्कोर है—प्रयोगशाला ग्रेड नहीं।',
+          ),
+          style: TextStyle(
+            color: color.withValues(alpha: 0.82),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRecommendationCard() {
     final reading = _reading;
+    final profile = FeedReferenceProfile.forFeed(_selectedFeed);
 
-    if (reading == null) {
+    if (reading == null || profile == null) {
       return const SizedBox.shrink();
     }
 
     final risk = _overallRisk(reading);
     final concerns = <String>[];
 
-    if (_riskLevel(
-          value: reading.moisture,
-          goodMin: 60,
-          goodMax: 70,
-          cautionMin: 55,
-          cautionMax: 75,
-        ) >
-        0) {
+    if (profile.moisture.riskLevel(reading.moisture) > 0) {
       concerns.add(_text('moisture', 'नमी'));
     }
 
-    if (_riskLevel(
-          value: reading.protein,
-          goodMin: 7,
-          goodMax: 10,
-          cautionMin: 5,
-          cautionMax: 12,
-        ) >
-        0) {
+    if (profile.protein.riskLevel(reading.protein) > 0) {
       concerns.add(_text('protein', 'प्रोटीन'));
     }
 
-    if (_riskLevel(
-          value: reading.fiber,
-          goodMin: 20,
-          goodMax: 30,
-          cautionMin: 15,
-          cautionMax: 35,
-        ) >
-        0) {
+    if (profile.fiber.riskLevel(reading.fiber) > 0) {
       concerns.add(_text('fibre', 'फाइबर'));
     }
 
-    if (_riskLevel(
-          value: reading.fat,
-          goodMin: 2,
-          goodMax: 5,
-          cautionMin: 1,
-          cautionMax: 6,
-        ) >
-        0) {
+    if (profile.fat.riskLevel(reading.fat) > 0) {
       concerns.add(_text('fat', 'वसा'));
     }
 
-    if (_riskLevel(
-          value: reading.ash,
-          goodMin: 4,
-          goodMax: 8,
-          cautionMin: 3,
-          cautionMax: 10,
-        ) >
-        0) {
+    if (profile.ash.riskLevel(reading.ash) > 0) {
       concerns.add(_text('ash', 'राख'));
     }
 

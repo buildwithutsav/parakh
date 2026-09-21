@@ -29,7 +29,10 @@ class DeviceReading {
   final String status;
   final DateTime receivedAt;
 
-  bool get isComplete => status.toLowerCase() == 'complete';
+  bool get isComplete {
+    final normalizedStatus = status.toLowerCase();
+    return normalizedStatus == 'complete' || normalizedStatus == 'simulated';
+  }
 
   factory DeviceReading.fromJson(Map<String, dynamic> json) {
     return DeviceReading(
@@ -47,23 +50,79 @@ class DeviceReading {
       receivedAt: _readDateTime(json, 'receivedAt'),
     );
   }
-
   factory DeviceReading.demo({
     String sampleId = 'S001',
     String feedType = 'Maize Silage',
   }) {
+    final ({
+      double moisture,
+      double protein,
+      double fiber,
+      double fat,
+      double ash,
+      double ph,
+      double temperature,
+    })
+    values = switch (feedType) {
+      'Wheat Straw' => (
+        moisture: 11.2,
+        protein: 4.5,
+        fiber: 38.0,
+        fat: 1.8,
+        ash: 8.4,
+        ph: 6.8,
+        temperature: 27.0,
+      ),
+      'Green Fodder' => (
+        moisture: 78.0,
+        protein: 13.2,
+        fiber: 28.0,
+        fat: 2.7,
+        ash: 9.0,
+        ph: 6.3,
+        temperature: 26.5,
+      ),
+      'Concentrate Feed' => (
+        moisture: 10.8,
+        protein: 19.0,
+        fiber: 13.5,
+        fat: 4.2,
+        ash: 7.8,
+        ph: 6.5,
+        temperature: 27.2,
+      ),
+      'Cattle Feed Pellets' => (
+        moisture: 10.5,
+        protein: 18.5,
+        fiber: 12.0,
+        fat: 4.0,
+        ash: 7.5,
+        ph: 6.4,
+        temperature: 27.0,
+      ),
+      _ => (
+        moisture: 66.0,
+        protein: 8.5,
+        fiber: 25.0,
+        fat: 3.2,
+        ash: 6.5,
+        ph: 4.2,
+        temperature: 27.5,
+      ),
+    };
+
     return DeviceReading(
-      device: 'PARAKH-01',
+      device: 'PARAKH-DEMO',
       sampleId: sampleId,
       feedType: feedType,
-      moisture: 12.4,
-      protein: 18.7,
-      fiber: 24.2,
-      fat: 3.8,
-      ash: 6.1,
-      ph: 6.4,
-      temperature: 27.5,
-      status: 'complete',
+      moisture: values.moisture,
+      protein: values.protein,
+      fiber: values.fiber,
+      fat: values.fat,
+      ash: values.ash,
+      ph: values.ph,
+      temperature: values.temperature,
+      status: 'simulated',
       receivedAt: DateTime.now(),
     );
   }
