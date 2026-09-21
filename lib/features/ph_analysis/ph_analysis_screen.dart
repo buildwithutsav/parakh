@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/parakh_colors.dart';
+import '../../core/models/ph_analysis_result.dart';
 
 class PhAnalysisScreen extends StatefulWidget {
   const PhAnalysisScreen({required this.isHindi, super.key});
@@ -18,6 +19,8 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _imageBytes;
+  PhAnalysisResult? _analysisResult;
+  String _selectedImageSource = 'unknown';
   bool _isAnalysing = false;
   bool _showResult = false;
   String _selectedFeed = 'Maize Silage';
@@ -42,6 +45,10 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
 
       setState(() {
         _imageBytes = bytes;
+        _selectedImageSource = source == ImageSource.camera
+            ? 'camera'
+            : 'gallery';
+        _analysisResult = null;
         _showResult = false;
       });
     } catch (_) {
@@ -86,6 +93,10 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
     if (!mounted) return;
 
     setState(() {
+      _analysisResult = PhAnalysisResult.prototype(
+        feedType: _selectedFeed,
+        imageSource: _selectedImageSource,
+      );
       _isAnalysing = false;
       _showResult = true;
     });
@@ -94,6 +105,8 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   void _clearImage() {
     setState(() {
       _imageBytes = null;
+      _analysisResult = null;
+      _selectedImageSource = 'unknown';
       _showResult = false;
     });
   }
@@ -396,6 +409,12 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   }
 
   Widget _buildResult() {
+    final result = _analysisResult;
+
+    if (result == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -405,17 +424,47 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
       ),
       child: Column(
         children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1CF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.science_outlined, color: Color(0xFF9A6815)),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    _text(
+                      'Prototype result: the pH image model and colour calibration are not connected yet.',
+                      'प्रोटोटाइप परिणाम: pH तस्वीर मॉडल और रंग कैलिब्रेशन अभी कनेक्ट नहीं हैं।',
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFF795315),
+                      fontSize: 12,
+                      height: 1.4,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
           Text(
-            _text('Estimated pH', 'अनुमानित pH'),
+            _text('Prototype pH value', 'प्रोटोटाइप pH मान'),
             style: const TextStyle(
               color: Color(0xFF68736B),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '4.3',
-            style: TextStyle(
+          Text(
+            result.estimatedPh.toStringAsFixed(1),
+            style: const TextStyle(
               color: Color(0xFF2F7650),
               fontSize: 47,
               fontWeight: FontWeight.w900,
@@ -425,16 +474,16 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F1E6),
+              color: const Color(0xFFFFF1CF),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               _text(
-                'Expected range for this silage',
-                'इस साइलेज के लिए अपेक्षित सीमा',
+                'Not estimated from this image',
+                'इस तस्वीर से अनुमानित नहीं',
               ),
               style: const TextStyle(
-                color: Color(0xFF32834C),
+                color: Color(0xFF9A6815),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -443,6 +492,55 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           const SizedBox(height: 21),
           _buildPhScale(),
           const SizedBox(height: 21),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F4EF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 9,
+              children: [
+                _phMetadataItem(
+                  Icons.image_outlined,
+                  _text('Image', 'तस्वीर'),
+                  result.imageSource,
+                ),
+                _phMetadataItem(
+                  Icons.model_training_rounded,
+                  _text('Model', 'मॉडल'),
+                  result.modelVersion,
+                ),
+                _phMetadataItem(
+                  Icons.color_lens_outlined,
+                  _text('Chart', 'चार्ट'),
+                  result.calibrationChartVersion,
+                ),
+                _phMetadataItem(
+                  Icons.fact_check_outlined,
+                  _text('Validation', 'सत्यापन'),
+                  result.isValidated
+                      ? _text('Validated', 'सत्यापित')
+                      : _text('Not validated', 'सत्यापित नहीं'),
+                ),
+                _phMetadataItem(
+                  Icons.percent_rounded,
+                  _text('Confidence', 'विश्वसनीयता'),
+                  result.confidence == null
+                      ? _text('Not available', 'उपलब्ध नहीं')
+                      : '${(result.confidence! * 100).toStringAsFixed(1)}%',
+                ),
+                _phMetadataItem(
+                  Icons.water_drop_outlined,
+                  _text('Preparation', 'तैयारी'),
+                  result.samplePreparation,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(15),
             decoration: BoxDecoration(
@@ -457,8 +555,8 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
                 Expanded(
                   child: Text(
                     _text(
-                      'The estimated acidity appears suitable for maize silage. Also check smell, temperature and visible mould before feeding.',
-                      'अनुमानित अम्लता मक्का साइलेज के लिए उपयुक्त दिखाई देती है। खिलाने से पहले गंध, तापमान और दिखाई देने वाली फफूंद भी जाँचें।',
+                      'For a real result, use a documented sample-preparation method, photograph the strip under controlled lighting with its reference chart, and confirm doubtful samples using a calibrated pH meter or laboratory test.',
+                      'वास्तविक परिणाम के लिए निर्धारित नमूना तैयारी विधि अपनाएँ, नियंत्रित रोशनी में संदर्भ चार्ट के साथ स्ट्रिप की तस्वीर लें और संदिग्ध नमूनों की पुष्टि कैलिब्रेटेड pH मीटर या प्रयोगशाला जाँच से करें।',
                     ),
                     style: const TextStyle(
                       color: Color(0xFF735B2E),
@@ -473,18 +571,37 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           const SizedBox(height: 13),
           Text(
             _text(
-              'This is a camera-based estimate, not a laboratory measurement.',
-              'यह कैमरा आधारित अनुमान है, प्रयोगशाला माप नहीं।',
+              'The displayed value is a simulated interface placeholder, not a measurement or prediction from the selected image.',
+              'दिखाया गया मान सिम्युलेटेड इंटरफेस प्लेसहोल्डर है, चुनी गई तस्वीर से प्राप्त माप या भविष्यवाणी नहीं।',
             ),
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFF8A6257),
+              color: Color(0xFF8F352C),
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _phMetadataItem(IconData icon, String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF607067)),
+        const SizedBox(width: 5),
+        Text(
+          '$label: $value',
+          style: const TextStyle(
+            color: Color(0xFF607067),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
