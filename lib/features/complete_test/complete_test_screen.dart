@@ -37,6 +37,33 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     return widget.isHindi ? hindi : english;
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadIdentifiedFeed();
+  }
+
+  Future<void> _loadIdentifiedFeed() async {
+    final preferences = await SharedPreferences.getInstance();
+    final identifiedFeed = preferences.getString('identifiedFeedType');
+
+    if (!mounted || identifiedFeed == null) return;
+
+    final supportedFeeds = {
+      'Maize Silage',
+      'Wheat Straw',
+      'Green Fodder',
+      'Concentrate Feed',
+      'Cattle Feed Pellets',
+    };
+
+    if (!supportedFeeds.contains(identifiedFeed)) return;
+
+    setState(() {
+      _selectedFeed = identifiedFeed;
+    });
+  }
+
   List<int> _nutritionRiskLevels(DeviceReading reading) {
     final profile = FeedReferenceProfile.forFeed(reading.feedType);
 
@@ -376,6 +403,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
+            key: ValueKey(_selectedFeed),
             initialValue: _selectedFeed,
             decoration: InputDecoration(
               labelText: _text('Feed type', 'चारे का प्रकार'),

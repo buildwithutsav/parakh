@@ -54,7 +54,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
 
   Future<void> _loadAnimalProfile() async {
     final preferences = await SharedPreferences.getInstance();
-
+    final identifiedFeed = preferences.getString('identifiedFeedType');
     final animalType = preferences.getString('animalType') ?? 'cow';
     final animalBreed = preferences.getString('animalBreed') ?? 'Not sure';
     final animalStage = preferences.getString('animalStage') ?? 'lactating';
@@ -81,6 +81,10 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       _animalWeight = animalWeight;
       _dailyMilkYield = dailyMilkYield;
       _milkFatPercent = milkFatPercent;
+      if (identifiedFeed != null &&
+          FeedReferenceProfile.forFeed(identifiedFeed) != null) {
+        _selectedFeed = identifiedFeed;
+      }
     });
   }
 
@@ -306,6 +310,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
+            key: ValueKey(_selectedFeed),
             initialValue: _selectedFeed,
             decoration: InputDecoration(
               labelText: _text('Feed type', 'चारे का प्रकार'),

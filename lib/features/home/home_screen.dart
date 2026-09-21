@@ -422,7 +422,10 @@ class _HomeScreenState extends State<HomeScreen> {
             );
 
             if (!mounted || identifiedFeed == null) return;
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.setString('identifiedFeedType', identifiedFeed);
 
+            if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
