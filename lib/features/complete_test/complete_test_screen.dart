@@ -30,6 +30,8 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
   FeedTestResult? _latestResult;
   final List<bool> _completedSteps = [false, false, false, false];
   final TestHistoryStorage _historyStorage = TestHistoryStorage();
+  final TextEditingController _sampleIdController = TextEditingController();
+  final TextEditingController _batchIdController = TextEditingController();
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
@@ -130,6 +132,16 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     if (!mounted) return;
 
     final completedAt = DateTime.now();
+    final enteredSampleId = _sampleIdController.text.trim();
+    final enteredBatchId = _batchIdController.text.trim();
+
+    final sampleId = enteredSampleId.isEmpty
+        ? 'SAMPLE-${completedAt.millisecondsSinceEpoch}'
+        : enteredSampleId;
+
+    final batchId = enteredBatchId.isEmpty
+        ? 'BATCH-${completedAt.millisecondsSinceEpoch}'
+        : enteredBatchId;
     final preferences = await SharedPreferences.getInstance();
 
     final animalType = preferences.getString('animalType') ?? 'Not provided';
@@ -138,7 +150,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
         preferences.getString('productionGoal') ?? 'Not provided';
 
     final evidence = CompleteTestEvidence.prototype(
-      sampleId: 'COMPLETE-${completedAt.millisecondsSinceEpoch}',
+      sampleId: sampleId,
       feedType: _selectedFeed,
     );
 
@@ -163,6 +175,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
       recommendationHindi: 'यह संयुक्त परिणाम एक प्रोटोटाइप पूर्वावलोकन है। पोषक मान सिम्युलेटेड हैं तथा कैमरा और pH मॉडल अभी कनेक्ट नहीं हैं। इस परिणाम के आधार पर चारा खिलाने का निर्णय न लें; भौतिक निरीक्षण, कैलिब्रेटेड जाँच और विशेषज्ञ सलाह से नमूने की पुष्टि करें।',
       createdAt: completedAt,
       sampleId: nirReading.sampleId,
+      batchId: batchId,
       animalType: animalType,
       animalBreed: animalBreed,
       productionGoal: productionGoal,
@@ -201,7 +214,16 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     );
   }
 
+  @override
+  void dispose() {
+    _sampleIdController.dispose();
+    _batchIdController.dispose();
+    super.dispose();
+  }
+
   void _resetTest() {
+    _sampleIdController.clear();
+    _batchIdController.clear();
     setState(() {
       _isRunning = false;
       _showResult = false;
@@ -323,32 +345,78 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE0E8DD)),
       ),
-      child: DropdownButtonFormField<String>(
-        initialValue: _selectedFeed,
-        decoration: InputDecoration(
-          labelText: _text('Feed type', 'चारे का प्रकार'),
-          prefixIcon: const Icon(Icons.grass_rounded),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-        items: const [
-          DropdownMenuItem(value: 'Maize Silage', child: Text('Maize Silage')),
-          DropdownMenuItem(
-            value: 'Sorghum Silage',
-            child: Text('Sorghum Silage'),
+      child: Column(
+        children: [
+          TextField(
+            controller: _sampleIdController,
+            enabled: !_isRunning,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: _text('Sample ID (optional)', 'नमूना आईडी (वैकल्पिक)'),
+              hintText: 'Example: SAMPLE-001',
+              prefixIcon: const Icon(Icons.qr_code_rounded),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
           ),
-          DropdownMenuItem(value: 'Green Fodder', child: Text('Green Fodder')),
-          DropdownMenuItem(value: 'Mixed Feed', child: Text('Mixed Feed')),
-          DropdownMenuItem(value: 'Other', child: Text('Other')),
-        ],
-        onChanged: _isRunning
-            ? null
-            : (value) {
-                if (value == null) return;
+          const SizedBox(height: 14),
+          TextField(
+            controller: _batchIdController,
+            enabled: !_isRunning,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: _text('Batch ID (optional)', 'बैच आईडी (वैकल्पिक)'),
+              hintText: 'Example: BATCH-2026-01',
+              prefixIcon: const Icon(Icons.inventory_2_outlined),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedFeed,
+            decoration: InputDecoration(
+              labelText: _text('Feed type', 'चारे का प्रकार'),
+              prefixIcon: const Icon(Icons.grass_rounded),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'Maize Silage',
+                child: Text('Maize Silage'),
+              ),
+              DropdownMenuItem(
+                value: 'Wheat Straw',
+                child: Text('Wheat Straw'),
+              ),
+              DropdownMenuItem(
+                value: 'Green Fodder',
+                child: Text('Green Fodder'),
+              ),
+              DropdownMenuItem(
+                value: 'Concentrate Feed',
+                child: Text('Concentrate Feed'),
+              ),
+              DropdownMenuItem(
+                value: 'Cattle Feed Pellets',
+                child: Text('Cattle Feed Pellets'),
+              ),
+            ],
+            onChanged: _isRunning
+                ? null
+                : (value) {
+                    if (value == null) return;
 
-                setState(() {
-                  _selectedFeed = value;
-                });
-              },
+                    setState(() {
+                      _selectedFeed = value;
+                    });
+                  },
+          ),
+        ],
       ),
     );
   }
