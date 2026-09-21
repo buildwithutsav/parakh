@@ -971,6 +971,8 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
         const SizedBox(height: 14),
         _buildScreeningNotice(),
         const SizedBox(height: 14),
+        _buildScanInformationCard(reading),
+        const SizedBox(height: 14),
         _buildScoreExplanation(reading),
         const SizedBox(height: 18),
         _buildMetricsCard(),
@@ -989,6 +991,90 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildScanInformationCard(DeviceReading reading) {
+    final sourceLabel = reading.isSimulated
+        ? _text('Simulated demo', 'सिम्युलेटेड डेमो')
+        : _text('Hardware scan', 'हार्डवेयर स्कैन');
+
+    final qualityLabel = switch (reading.scanQuality) {
+      'good' => _text('Good scan quality', 'अच्छी स्कैन गुणवत्ता'),
+      'warning' => _text('Review scan quality', 'स्कैन गुणवत्ता जाँचें'),
+      'poor' => _text('Poor scan quality', 'खराब स्कैन गुणवत्ता'),
+      'demo' => _text('Demo quality', 'डेमो गुणवत्ता'),
+      _ => _text('Quality not reported', 'गुणवत्ता उपलब्ध नहीं'),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E8DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.memory_rounded, color: ParakhColors.forestGreen),
+              const SizedBox(width: 9),
+              Text(
+                _text('Scan information', 'स्कैन की जानकारी'),
+                style: const TextStyle(
+                  color: Color(0xFF26372D),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _profileChip(Icons.source_rounded, sourceLabel),
+              _profileChip(Icons.sensors_rounded, reading.device),
+              _profileChip(Icons.fact_check_outlined, qualityLabel),
+              _profileChip(
+                Icons.developer_board_rounded,
+                'FW ${reading.firmwareVersion}',
+              ),
+              _profileChip(
+                Icons.model_training_rounded,
+                reading.calibrationVersion,
+              ),
+              if (reading.hasSpectralData)
+                _profileChip(
+                  Icons.multiline_chart_rounded,
+                  _text(
+                    '${reading.spectralChannels.length} spectral channels',
+                    '${reading.spectralChannels.length} स्पेक्ट्रल चैनल',
+                  ),
+                ),
+              if (!reading.hasSpectralData)
+                _profileChip(
+                  Icons.visibility_off_outlined,
+                  _text('No raw spectrum', 'कच्चा स्पेक्ट्रम उपलब्ध नहीं'),
+                ),
+              if (reading.integrationTimeMs != null)
+                _profileChip(
+                  Icons.timer_outlined,
+                  '${reading.integrationTimeMs} ms',
+                ),
+              if (reading.sensorGain != null)
+                _profileChip(
+                  Icons.tune_rounded,
+                  'Gain ${reading.sensorGain!.toStringAsFixed(1)}×',
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

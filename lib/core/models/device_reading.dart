@@ -12,6 +12,13 @@ class DeviceReading {
     required this.temperature,
     required this.status,
     required this.receivedAt,
+    this.spectralChannels = const {},
+    this.firmwareVersion = 'unknown',
+    this.scanSource = 'device',
+    this.scanQuality = 'unknown',
+    this.integrationTimeMs,
+    this.sensorGain,
+    this.calibrationVersion = 'unvalidated',
   });
 
   final String device;
@@ -28,7 +35,16 @@ class DeviceReading {
 
   final String status;
   final DateTime receivedAt;
+  final Map<String, double> spectralChannels;
+  final String firmwareVersion;
+  final String scanSource;
+  final String scanQuality;
+  final int? integrationTimeMs;
+  final double? sensorGain;
+  final String calibrationVersion;
 
+  bool get isSimulated => scanSource == 'simulated' || status == 'simulated';
+  bool get hasSpectralData => spectralChannels.isNotEmpty;
   bool get isComplete {
     final normalizedStatus = status.toLowerCase();
     return normalizedStatus == 'complete' || normalizedStatus == 'simulated';
@@ -48,6 +64,21 @@ class DeviceReading {
       temperature: _readDouble(json, 'temperature'),
       status: _readString(json, 'status', fallback: 'complete'),
       receivedAt: _readDateTime(json, 'receivedAt'),
+      spectralChannels: _readSpectralChannels(json, 'spectralChannels'),
+      firmwareVersion: _readString(
+        json,
+        'firmwareVersion',
+        fallback: 'unknown',
+      ),
+      scanSource: _readString(json, 'scanSource', fallback: 'device'),
+      scanQuality: _readString(json, 'scanQuality', fallback: 'unknown'),
+      integrationTimeMs: _readNullableInt(json, 'integrationTimeMs'),
+      sensorGain: _readNullableDouble(json, 'sensorGain'),
+      calibrationVersion: _readString(
+        json,
+        'calibrationVersion',
+        fallback: 'unvalidated',
+      ),
     );
   }
   factory DeviceReading.demo({
@@ -124,6 +155,13 @@ class DeviceReading {
       temperature: values.temperature,
       status: 'simulated',
       receivedAt: DateTime.now(),
+      spectralChannels: const {},
+      firmwareVersion: 'demo-1.0',
+      scanSource: 'simulated',
+      scanQuality: 'demo',
+      integrationTimeMs: null,
+      sensorGain: null,
+      calibrationVersion: 'prototype-rules-v1',
     );
   }
 
@@ -141,6 +179,13 @@ class DeviceReading {
       'temperature': temperature,
       'status': status,
       'receivedAt': receivedAt.toIso8601String(),
+      'spectralChannels': spectralChannels,
+      'firmwareVersion': firmwareVersion,
+      'scanSource': scanSource,
+      'scanQuality': scanQuality,
+      'integrationTimeMs': integrationTimeMs,
+      'sensorGain': sensorGain,
+      'calibrationVersion': calibrationVersion,
     };
   }
 
@@ -172,6 +217,52 @@ class DeviceReading {
     }
 
     return 0;
+  }
+
+  static Map<String, double> _readSpectralChannels(
+    Map<String, dynamic> json,
+    String key,
+  ) {
+    final value = json[key];
+
+    if (value is! Map) {
+      return const {};
+    }
+
+    final channels = <String, double>{};
+
+    value.forEach((channel, reading) {
+      if (reading is num) {
+        channels[channel.toString()] = reading.toDouble();
+      } else if (reading is String) {
+        final converted = double.tryParse(reading.trim());
+
+        if (converted != null) {
+          channels[channel.toString()] = converted;
+        }
+      }
+    });
+
+    return channels;
+  }
+
+  static int? _readNullableInt(Map<String, dynamic> json, String key) {
+    final value = json[key];
+
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+
+    return null;
+  }
+
+  static double? _readNullableDouble(Map<String, dynamic> json, String key) {
+    final value = json[key];
+
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+
+    return null;
   }
 
   static DateTime _readDateTime(Map<String, dynamic> json, String key) {
