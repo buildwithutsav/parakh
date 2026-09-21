@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/feed_test_result.dart';
 import '../../core/storage/test_history_storage.dart';
 
 import '../../core/theme/parakh_colors.dart';
+import '../../core/models/device_reading.dart';
 
 class CompleteTestScreen extends StatefulWidget {
   const CompleteTestScreen({
@@ -76,7 +78,17 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     if (!mounted) return;
 
     final completedAt = DateTime.now();
+    final preferences = await SharedPreferences.getInstance();
 
+    final animalType = preferences.getString('animalType') ?? 'Not provided';
+    final animalBreed = preferences.getString('animalBreed') ?? 'Not provided';
+    final productionGoal =
+        preferences.getString('productionGoal') ?? 'Not provided';
+
+    final demoReading = DeviceReading.demo(
+      sampleId: 'COMPLETE-${completedAt.millisecondsSinceEpoch}',
+      feedType: _selectedFeed,
+    );
     final result = FeedTestResult(
       id: completedAt.microsecondsSinceEpoch.toString(),
       feedType: _selectedFeed,
@@ -89,6 +101,20 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
       recommendationEnglish: 'The sample appears suitable for feeding. Remove visible soil, store it in a dry covered area, and use a balanced mineral mixture according to expert advice.',
       recommendationHindi: 'नमूना खिलाने के लिए उपयुक्त दिखाई देता है। दिखाई देने वाली मिट्टी हटाएँ, इसे सूखी ढकी जगह पर रखें और विशेषज्ञ की सलाह के अनुसार संतुलित खनिज मिश्रण दें।',
       createdAt: completedAt,
+      sampleId: demoReading.sampleId,
+      animalType: animalType,
+      animalBreed: animalBreed,
+      productionGoal: productionGoal,
+      dataSource: 'simulated-prototype',
+      deviceId: demoReading.device,
+      firmwareVersion: demoReading.firmwareVersion,
+      calibrationVersion: demoReading.calibrationVersion,
+      moisture: demoReading.moisture,
+      protein: demoReading.protein,
+      fiber: demoReading.fiber,
+      fat: demoReading.fat,
+      ash: demoReading.ash,
+      isLaboratoryValidated: false,
     );
 
     await _historyStorage.saveResult(result);

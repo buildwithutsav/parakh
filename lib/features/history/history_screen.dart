@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/feed_test_result.dart';
 import '../../core/storage/test_history_storage.dart';
 import '../../core/theme/parakh_colors.dart';
+import '../../core/services/test_report_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({required this.isHindi, super.key});
@@ -15,6 +16,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final TestHistoryStorage _storage = TestHistoryStorage();
+  final TestReportService _reportService = TestReportService();
 
   bool _isLoading = true;
   List<FeedTestResult> _results = [];
@@ -311,6 +313,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  Future<void> _shareReport(FeedTestResult result) async {
+    try {
+      await _reportService.shareReport(result);
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'Could not create the PDF report.',
+              'PDF रिपोर्ट नहीं बनाई जा सकी।',
+            ),
+          ),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
+  }
+
   void _showResultDetails(FeedTestResult result) {
     showModalBottomSheet<void>(
       context: context,
@@ -375,6 +397,51 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   _detailRow(
                     _text('Impurities', 'अशुद्धियाँ'),
                     result.impurityStatus,
+                  ),
+                  _detailRow(_text('Sample ID', 'नमूना आईडी'), result.sampleId),
+                  _detailRow(
+                    _text('Animal', 'पशु'),
+                    '${result.animalType} • ${result.animalBreed}',
+                  ),
+                  _detailRow(
+                    _text('Production goal', 'उत्पादन लक्ष्य'),
+                    result.productionGoal,
+                  ),
+                  _detailRow(
+                    _text('Data source', 'डेटा स्रोत'),
+                    result.dataSource,
+                  ),
+                  _detailRow(_text('Device', 'डिवाइस'), result.deviceId),
+                  _detailRow(
+                    _text('Calibration', 'कैलिब्रेशन'),
+                    result.calibrationVersion,
+                  ),
+                  _detailRow(
+                    _text('Validation', 'सत्यापन'),
+                    result.isLaboratoryValidated
+                        ? _text(
+                            'Laboratory validated',
+                            'प्रयोगशाला द्वारा सत्यापित',
+                          )
+                        : _text('Screening only', 'केवल स्क्रीनिंग'),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton.icon(
+                      onPressed: () => _shareReport(result),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: ParakhColors.forestGreen,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded),
+                      label: Text(
+                        _text('Share PDF report', 'PDF रिपोर्ट साझा करें'),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 18),
                   Container(
