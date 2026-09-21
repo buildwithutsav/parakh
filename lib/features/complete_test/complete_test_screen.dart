@@ -6,6 +6,7 @@ import '../../core/storage/test_history_storage.dart';
 
 import '../../core/theme/parakh_colors.dart';
 import '../../core/models/device_reading.dart';
+import '../../core/models/feed_reference_profile.dart';
 
 class CompleteTestScreen extends StatefulWidget {
   const CompleteTestScreen({
@@ -26,11 +27,62 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
   int _activeStep = -1;
   bool _isRunning = false;
   bool _showResult = false;
+  FeedTestResult? _latestResult;
   final List<bool> _completedSteps = [false, false, false, false];
   final TestHistoryStorage _historyStorage = TestHistoryStorage();
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
+  }
+
+  List<int> _nutritionRiskLevels(DeviceReading reading) {
+    final profile = FeedReferenceProfile.forFeed(reading.feedType);
+
+    if (profile == null) {
+      return const [2];
+    }
+
+    return [
+      profile.moisture.riskLevel(reading.moisture),
+      profile.protein.riskLevel(reading.protein),
+      profile.fiber.riskLevel(reading.fiber),
+      profile.fat.riskLevel(reading.fat),
+      profile.ash.riskLevel(reading.ash),
+    ];
+  }
+
+  int _nutritionRisk(DeviceReading reading) {
+    final levels = _nutritionRiskLevels(reading);
+
+    if (levels.contains(2)) return 2;
+    if (levels.contains(1)) return 1;
+    return 0;
+  }
+
+  int _prototypeScore(DeviceReading reading) {
+    final penalty = _nutritionRiskLevels(reading).fold<int>(
+      0,
+      (total, level) =>
+          total +
+          (level == 2
+              ? 20
+              : level == 1
+              ? 8
+              : 0),
+    );
+
+    return (100 - penalty).clamp(0, 100);
+  }
+
+  String _nutritionStatus(DeviceReading reading) {
+    switch (_nutritionRisk(reading)) {
+      case 2:
+        return 'Needs review';
+      case 1:
+        return 'Caution';
+      default:
+        return 'Within prototype range';
+    }
   }
 
   Future<void> _startCompleteTest() async {
@@ -89,17 +141,19 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
       sampleId: 'COMPLETE-${completedAt.millisecondsSinceEpoch}',
       feedType: _selectedFeed,
     );
+    final prototypeScore = _prototypeScore(demoReading);
+    final nutritionStatus = _nutritionStatus(demoReading);
     final result = FeedTestResult(
       id: completedAt.microsecondsSinceEpoch.toString(),
       feedType: _selectedFeed,
       testType: 'Complete Test',
-      score: 87,
-      riskLevel: 'LOW',
+      score: prototypeScore,
+      riskLevel: 'UNVERIFIED',
       phValue: 4.3,
-      nutritionStatus: 'Good',
-      impurityStatus: 'Low',
-      recommendationEnglish: 'The sample appears suitable for feeding. Remove visible soil, store it in a dry covered area, and use a balanced mineral mixture according to expert advice.',
-      recommendationHindi: 'नमूना खिलाने के लिए उपयुक्त दिखाई देता है। दिखाई देने वाली मिट्टी हटाएँ, इसे सूखी ढकी जगह पर रखें और विशेषज्ञ की सलाह के अनुसार संतुलित खनिज मिश्रण दें।',
+      nutritionStatus: nutritionStatus,
+      impurityStatus: 'Simulated placeholder',
+      recommendationEnglish: 'This combined result is a prototype preview. Nutrient values are simulated, while camera and pH models are not connected. Do not make a feeding decision from this result; confirm the sample through physical inspection, calibrated testing and expert advice.',
+      recommendationHindi: 'यह संयुक्त परिणाम एक प्रोटोटाइप पूर्वावलोकन है। पोषक मान सिम्युलेटेड हैं तथा कैमरा और pH मॉडल अभी कनेक्ट नहीं हैं। इस परिणाम के आधार पर चारा खिलाने का निर्णय न लें; भौतिक निरीक्षण, कैलिब्रेटेड जाँच और विशेषज्ञ सलाह से नमूने की पुष्टि करें।',
       createdAt: completedAt,
       sampleId: demoReading.sampleId,
       animalType: animalType,
@@ -124,6 +178,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     setState(() {
       _activeStep = -1;
       _isRunning = false;
+      _latestResult = result;
       _showResult = true;
     });
 
@@ -139,9 +194,9 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
 
   void _resetTest() {
     setState(() {
-      _activeStep = -1;
       _isRunning = false;
       _showResult = false;
+      _latestResult = null;
 
       for (var i = 0; i < _completedSteps.length; i++) {
         _completedSteps[i] = false;
@@ -441,7 +496,26 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     );
   }
 
+  String _nutritionStatusLabel(String status) {
+    switch (status) {
+      case 'Needs review':
+        return _text('Needs review', 'समीक्षा आवश्यक');
+      case 'Caution':
+        return _text('Caution', 'सावधानी');
+      case 'Within prototype range':
+        return _text('Within prototype range', 'प्रोटोटाइप सीमा में');
+      default:
+        return status;
+    }
+  }
+
   Widget _buildFinalResult() {
+    final result = _latestResult;
+
+    if (result == null) {
+      return const SizedBox.shrink();
+    }
+
     return Column(
       children: [
         Container(
@@ -449,20 +523,21 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
           padding: const EdgeInsets.all(23),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF174D35), Color(0xFF2F7650)],
+              colors: [Color(0xFF795315), Color(0xFFB47B20)],
             ),
             borderRadius: BorderRadius.circular(22),
           ),
           child: Column(
             children: [
               const Icon(
-                Icons.shield_rounded,
-                color: Color(0xFFF0D98C),
+                Icons.science_rounded,
+                color: Color(0xFFFFE0A3),
                 size: 47,
               ),
               const SizedBox(height: 10),
               Text(
-                _text('FeedGuard Result', 'फीडगार्ड परिणाम'),
+                _text('Prototype combined result', 'प्रोटोटाइप संयुक्त परिणाम'),
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -471,34 +546,48 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
               ),
               const SizedBox(height: 5),
               Text(
-                _selectedFeed,
-                style: const TextStyle(color: Color(0xFFDDEBE1)),
+                result.feedType,
+                style: const TextStyle(color: Color(0xFFFFE8BB)),
               ),
               const SizedBox(height: 17),
-              const Text(
-                '87/100',
-                style: TextStyle(
+              Text(
+                '${result.score}/100',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 42,
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              const SizedBox(height: 7),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 13,
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A9560),
+                  color: const Color(0xFF66440F),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _text('LOW RISK', 'कम जोखिम'),
+                  _text('UNVERIFIED', 'असत्यापित'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _text(
+                  'Prototype screening score—not a laboratory result',
+                  'प्रोटोटाइप स्क्रीनिंग स्कोर—प्रयोगशाला परिणाम नहीं',
+                ),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFFFE8BB),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -525,6 +614,12 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
   }
 
   Widget _buildSummaryCard() {
+    final result = _latestResult;
+
+    if (result == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -536,26 +631,29 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
         children: [
           _summaryRow(
             _text('NIR nutrition', 'NIR पोषण'),
-            _text('Good', 'अच्छा'),
-            const Color(0xFF32834C),
+            _nutritionStatusLabel(result.nutritionStatus),
+            const Color(0xFFC48526),
           ),
           const Divider(height: 25),
           _summaryRow(
-            _text('Visible impurities', 'दृश्य अशुद्धियाँ'),
-            _text('Low', 'कम'),
-            const Color(0xFF32834C),
+            _text('Camera findings', 'कैमरा निष्कर्ष'),
+            _text('Not analysed', 'विश्लेषण नहीं हुआ'),
+            const Color(0xFF8063A6),
           ),
           const Divider(height: 25),
           _summaryRow(
-            _text('Estimated pH', 'अनुमानित pH'),
-            '4.3',
+            _text('pH result', 'pH परिणाम'),
+            _text(
+              'Prototype ${result.phValue.toStringAsFixed(1)}',
+              'प्रोटोटाइप ${result.phValue.toStringAsFixed(1)}',
+            ),
             const Color(0xFF3D70A8),
           ),
           const Divider(height: 25),
           _summaryRow(
-            _text('Overall quality', 'कुल गुणवत्ता'),
-            _text('Suitable', 'उपयुक्त'),
-            const Color(0xFF32834C),
+            _text('Overall validation', 'समग्र सत्यापन'),
+            _text('Not validated', 'सत्यापित नहीं'),
+            const Color(0xFFB75B4A),
           ),
         ],
       ),
@@ -574,32 +672,47 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
             ),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(color: color, fontWeight: FontWeight.w800),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
         ),
       ],
     );
   }
 
   Widget _buildRecommendation() {
+    final result = _latestResult;
+
+    if (result == null) {
+      return const SizedBox.shrink();
+    }
+
+    final recommendation = widget.isHindi
+        ? result.recommendationHindi
+        : result.recommendationEnglish;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: const Color(0xFFFFF7DF),
         borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFE8C979)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lightbulb_rounded, color: Color(0xFFC48526)),
+          const Icon(Icons.warning_amber_rounded, color: Color(0xFFC48526)),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _text('Farmer recommendation', 'किसान के लिए सुझाव'),
+                  _text('Prototype guidance', 'प्रोटोटाइप मार्गदर्शन'),
                   style: const TextStyle(
                     color: Color(0xFF735B2E),
                     fontWeight: FontWeight.w800,
@@ -607,14 +720,24 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  _text(
-                    'The sample appears suitable for feeding. Remove any visible soil, store it in a dry covered area, and use a balanced mineral mixture according to expert advice.',
-                    'नमूना खिलाने के लिए उपयुक्त दिखाई देता है। दिखाई देने वाली मिट्टी हटाएँ, इसे सूखी ढकी जगह पर रखें और विशेषज्ञ की सलाह के अनुसार संतुलित खनिज मिश्रण दें।',
-                  ),
+                  recommendation,
                   style: const TextStyle(
                     color: Color(0xFF735B2E),
                     fontSize: 13,
                     height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _text(
+                    'Camera AI and calibrated pH analysis are not connected in this prototype.',
+                    'इस प्रोटोटाइप में कैमरा AI और कैलिब्रेटेड pH विश्लेषण कनेक्ट नहीं हैं।',
+                  ),
+                  style: const TextStyle(
+                    color: Color(0xFF8A6418),
+                    fontSize: 11,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
