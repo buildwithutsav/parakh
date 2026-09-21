@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/models/feed_test_result.dart';
-import '../../core/storage/test_history_storage.dart';
-
-import '../../core/theme/parakh_colors.dart';
+import '../../core/models/complete_test_evidence.dart';
 import '../../core/models/device_reading.dart';
 import '../../core/models/feed_reference_profile.dart';
+import '../../core/models/feed_test_result.dart';
+import '../../core/storage/test_history_storage.dart';
+import '../../core/theme/parakh_colors.dart';
 
 class CompleteTestScreen extends StatefulWidget {
   const CompleteTestScreen({
@@ -137,38 +137,47 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     final productionGoal =
         preferences.getString('productionGoal') ?? 'Not provided';
 
-    final demoReading = DeviceReading.demo(
+    final evidence = CompleteTestEvidence.prototype(
       sampleId: 'COMPLETE-${completedAt.millisecondsSinceEpoch}',
       feedType: _selectedFeed,
     );
-    final prototypeScore = _prototypeScore(demoReading);
-    final nutritionStatus = _nutritionStatus(demoReading);
+
+    final nirReading = evidence.nirReading;
+    final cameraResult = evidence.cameraResult;
+    final phResult = evidence.phResult;
+
+    final prototypeScore = _prototypeScore(nirReading);
+    final nutritionStatus = _nutritionStatus(nirReading);
     final result = FeedTestResult(
       id: completedAt.microsecondsSinceEpoch.toString(),
       feedType: _selectedFeed,
       testType: 'Complete Test',
       score: prototypeScore,
       riskLevel: 'UNVERIFIED',
-      phValue: 4.3,
+      phValue: phResult.estimatedPh,
       nutritionStatus: nutritionStatus,
-      impurityStatus: 'Simulated placeholder',
+      impurityStatus: cameraResult.imageSource == 'not-captured'
+          ? 'Not analysed'
+          : 'Unverified camera result',
       recommendationEnglish: 'This combined result is a prototype preview. Nutrient values are simulated, while camera and pH models are not connected. Do not make a feeding decision from this result; confirm the sample through physical inspection, calibrated testing and expert advice.',
       recommendationHindi: 'यह संयुक्त परिणाम एक प्रोटोटाइप पूर्वावलोकन है। पोषक मान सिम्युलेटेड हैं तथा कैमरा और pH मॉडल अभी कनेक्ट नहीं हैं। इस परिणाम के आधार पर चारा खिलाने का निर्णय न लें; भौतिक निरीक्षण, कैलिब्रेटेड जाँच और विशेषज्ञ सलाह से नमूने की पुष्टि करें।',
       createdAt: completedAt,
-      sampleId: demoReading.sampleId,
+      sampleId: nirReading.sampleId,
       animalType: animalType,
       animalBreed: animalBreed,
       productionGoal: productionGoal,
-      dataSource: 'simulated-prototype',
-      deviceId: demoReading.device,
-      firmwareVersion: demoReading.firmwareVersion,
-      calibrationVersion: demoReading.calibrationVersion,
-      moisture: demoReading.moisture,
-      protein: demoReading.protein,
-      fiber: demoReading.fiber,
-      fat: demoReading.fat,
-      ash: demoReading.ash,
-      isLaboratoryValidated: false,
+      dataSource: evidence.usesSimulatedData
+          ? 'simulated-prototype'
+          : 'combined-device-analysis',
+      deviceId: nirReading.device,
+      firmwareVersion: nirReading.firmwareVersion,
+      calibrationVersion: nirReading.calibrationVersion,
+      moisture: nirReading.moisture,
+      protein: nirReading.protein,
+      fiber: nirReading.fiber,
+      fat: nirReading.fat,
+      ash: nirReading.ash,
+      isLaboratoryValidated: evidence.isFullyValidated,
     );
 
     await _historyStorage.saveResult(result);
