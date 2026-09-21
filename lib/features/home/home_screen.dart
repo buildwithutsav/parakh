@@ -5,6 +5,7 @@ import '../../core/theme/parakh_colors.dart';
 import '../device/device_connection_screen.dart';
 import '../analysis/nir_analysis_screen.dart';
 import '../camera_analysis/camera_analysis_screen.dart';
+import '../feed_identification/feed_identification_screen.dart';
 import '../ph_analysis/ph_analysis_screen.dart';
 import '../complete_test/complete_test_screen.dart';
 import '../history/history_screen.dart';
@@ -404,6 +405,60 @@ class _HomeScreenState extends State<HomeScreen> {
                   isHindi: _isHindi,
                   isDeviceConnected: _isDeviceConnected || _isDemoMode,
                 ),
+              ),
+            );
+          },
+        ),
+        _analysisCard(
+          icon: Icons.image_search_rounded,
+          title: _text('Identify Feed', 'चारा पहचानें'),
+          subtitle: _text('Recognise feed type', 'चारे का प्रकार पहचानें'),
+          color: const Color(0xFF5B7F3A),
+          onTap: () async {
+            final identifiedFeed = await Navigator.of(context).push<String>(
+              MaterialPageRoute<String>(
+                builder: (_) => FeedIdentificationScreen(isHindi: _isHindi),
+              ),
+            );
+
+            if (!mounted || identifiedFeed == null) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _text(
+                    '$identifiedFeed selected for testing.',
+                    '$identifiedFeed को जाँच के लिए चुना गया है।',
+                  ),
+                ),
+                backgroundColor: ParakhColors.forestGreen,
+              ),
+            );
+          },
+        ),
+        _analysisCard(
+          icon: Icons.image_search_rounded,
+          title: _text('Identify Feed', 'चारा पहचानें'),
+          subtitle: _text('Recognise feed type', 'चारे का प्रकार पहचानें'),
+          color: const Color(0xFF5B7F3A),
+          onTap: () async {
+            final identifiedFeed = await Navigator.of(context).push<String>(
+              MaterialPageRoute<String>(
+                builder: (_) => FeedIdentificationScreen(isHindi: _isHindi),
+              ),
+            );
+
+            if (!mounted || identifiedFeed == null) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _text(
+                    '$identifiedFeed selected for testing.',
+                    '$identifiedFeed को जाँच के लिए चुना गया है।',
+                  ),
+                ),
+                backgroundColor: ParakhColors.forestGreen,
               ),
             );
           },
