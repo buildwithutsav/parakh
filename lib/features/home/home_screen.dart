@@ -11,6 +11,7 @@ import '../history/history_screen.dart';
 import '../advice/advice_screen.dart';
 import '../settings/settings_screen.dart';
 import '../animal_profile/animal_profile_screen.dart';
+import '../storage_monitoring/storage_monitoring_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -429,6 +430,19 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => PhAnalysisScreen(isHindi: _isHindi),
+              ),
+            );
+          },
+        ),
+        _analysisCard(
+          icon: Icons.warehouse_rounded,
+          title: _text('Storage Monitor', 'भंडारण निगरानी'),
+          subtitle: _text('Spoilage screening', 'खराब होने की जाँच'),
+          color: const Color(0xFF9A6815),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StorageMonitoringScreen(isHindi: _isHindi),
               ),
             );
           },
