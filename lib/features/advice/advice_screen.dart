@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/parakh_colors.dart';
+import '../../core/models/feed_recommendation.dart';
+import '../../core/models/feed_test_result.dart';
+import '../../core/services/offline_recommendation_service.dart';
+import '../../core/storage/test_history_storage.dart';
 
 class AdviceScreen extends StatefulWidget {
   const AdviceScreen({required this.isHindi, super.key});
@@ -13,9 +17,47 @@ class AdviceScreen extends StatefulWidget {
 
 class _AdviceScreenState extends State<AdviceScreen> {
   String _selectedCategory = 'All';
+  final TestHistoryStorage _historyStorage = TestHistoryStorage();
+  final OfflineRecommendationService _recommendationService =
+      const OfflineRecommendationService();
+
+  FeedRecommendation? _personalizedRecommendation;
+  bool _isLoadingRecommendation = true;
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLatestRecommendation();
+  }
+
+  Future<void> _loadLatestRecommendation() async {
+    setState(() {
+      _isLoadingRecommendation = true;
+    });
+
+    final results = await _historyStorage.getResults();
+
+    FeedTestResult? latestCompleteTest;
+
+    for (final result in results) {
+      if (result.testType == 'Complete Test') {
+        latestCompleteTest = result;
+        break;
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _personalizedRecommendation = latestCompleteTest == null
+          ? null
+          : _recommendationService.generate(latestCompleteTest);
+      _isLoadingRecommendation = false;
+    });
   }
 
   List<_AdviceItem> get _adviceItems {
@@ -190,6 +232,8 @@ class _AdviceScreenState extends State<AdviceScreen> {
               children: [
                 _buildHeader(),
                 const SizedBox(height: 18),
+                _buildPersonalizedRecommendation(),
+                const SizedBox(height: 18),
                 _buildCategorySelector(),
                 const SizedBox(height: 17),
                 ..._filteredItems.map(_buildAdviceCard),
@@ -255,6 +299,228 @@ class _AdviceScreenState extends State<AdviceScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPersonalizedRecommendation() {
+    if (_isLoadingRecommendation) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final recommendation = _personalizedRecommendation;
+
+    if (recommendation == null) {
+      return Container(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE0E8DD)),
+        ),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.assignment_outlined,
+              color: Color(0xFF708078),
+              size: 34,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _text(
+                'Complete a feed test to receive personalized guidance.',
+                'व्यक्तिगत सुझाव प्राप्त करने के लिए संपूर्ण चारा जाँच पूरी करें।',
+              ),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF566158),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _loadLatestRecommendation,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(_text('Check again', 'फिर से जाँचें')),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final actions = widget.isHindi
+        ? recommendation.actionsHindi
+        : recommendation.actionsEnglish;
+
+    final warnings = widget.isHindi
+        ? recommendation.warningsHindi
+        : recommendation.warningsEnglish;
+
+    final summary = widget.isHindi
+        ? recommendation.summaryHindi
+        : recommendation.summaryEnglish;
+
+    final priorityColor = switch (recommendation.priority) {
+      'urgent' => const Color(0xFFB54435),
+      'review' => const Color(0xFFC48526),
+      _ => const Color(0xFF32834C),
+    };
+
+    final priorityLabel = switch (recommendation.priority) {
+      'urgent' => _text('Urgent review', 'तुरंत समीक्षा'),
+      'review' => _text('Needs confirmation', 'पुष्टि आवश्यक'),
+      _ => _text('Routine guidance', 'सामान्य मार्गदर्शन'),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: priorityColor.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: priorityColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.auto_awesome_rounded, color: priorityColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(
+                        'Personalized feed guidance',
+                        'व्यक्तिगत चारा मार्गदर्शन',
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFF26342B),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      priorityLabel,
+                      style: TextStyle(
+                        color: priorityColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _loadLatestRecommendation,
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: _text('Refresh', 'रीफ्रेश'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Text(
+            summary,
+            style: const TextStyle(
+              color: Color(0xFF465249),
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              _text('Recommended actions', 'सुझाए गए कदम'),
+              style: const TextStyle(
+                color: Color(0xFF26342B),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 9),
+            ...actions.map(
+              (action) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: ParakhColors.forestGreen,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        action,
+                        style: const TextStyle(
+                          color: Color(0xFF4C5A50),
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (warnings.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1CF),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: warnings
+                    .map(
+                      (warning) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          '• $warning',
+                          style: const TextStyle(
+                            color: Color(0xFF795315),
+                            fontSize: 12,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            _text(
+              'Source: Offline rules • Not laboratory validated',
+              'स्रोत: ऑफलाइन नियम • प्रयोगशाला द्वारा सत्यापित नहीं',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF7A847D),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
