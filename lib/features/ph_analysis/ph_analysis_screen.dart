@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme/parakh_colors.dart';
 import '../../core/models/ph_analysis_result.dart';
 import '../../core/services/ph_analysis_ai_service.dart';
+import '../../core/storage/latest_analysis_storage.dart';
 
 class PhAnalysisScreen extends StatefulWidget {
   const PhAnalysisScreen({required this.isHindi, super.key});
@@ -19,6 +20,7 @@ class PhAnalysisScreen extends StatefulWidget {
 class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final PhAnalysisAiService _aiService = PhAnalysisAiService();
+  final LatestAnalysisStorage _latestAnalysisStorage = LatestAnalysisStorage();
   Uint8List? _imageBytes;
   PhAnalysisResult? _analysisResult;
   String _selectedImageSource = 'unknown';
@@ -98,6 +100,19 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
         imageSource: _selectedImageSource,
         feedType: _selectedFeed,
       );
+
+      final isUsableResult =
+          result.analysisSource == 'firebase-ai-logic' &&
+          result.stripQuality != 'unusable' &&
+          result.estimatedPh > 0 &&
+          result.confidence != null &&
+          result.confidence! > 0;
+
+      if (isUsableResult) {
+        await _latestAnalysisStorage.savePhResult(result);
+      } else {
+        await _latestAnalysisStorage.clearPhResult();
+      }
 
       if (!mounted) return;
 

@@ -9,6 +9,7 @@ import '../../core/models/calibration_record.dart';
 import '../../core/storage/calibration_storage.dart';
 import '../../core/models/feed_reference_profile.dart';
 import '../../core/theme/parakh_colors.dart';
+import '../../core/storage/latest_analysis_storage.dart';
 
 class NirAnalysisScreen extends StatefulWidget {
   const NirAnalysisScreen({
@@ -29,7 +30,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   final DeviceDataService _deviceDataService = DeviceDataService();
   final CalibrationStorage _calibrationStorage = CalibrationStorage();
   final FlutterTts _flutterTts = FlutterTts();
-
+  final LatestAnalysisStorage _latestAnalysisStorage = LatestAnalysisStorage();
   String _selectedFeed = 'Maize Silage';
   bool _isScanning = false;
   bool _showResult = false;
@@ -156,6 +157,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     } catch (_) {
       // Calibration logging must not prevent the farmer from viewing the result.
     }
+    await _latestAnalysisStorage.saveNirReading(reading);
     if (!mounted) return;
 
     setState(() {

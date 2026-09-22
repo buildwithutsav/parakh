@@ -2,10 +2,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/camera_analysis_result.dart';
 import '../../core/services/camera_analysis_ai_service.dart';
 import '../../core/theme/parakh_colors.dart';
+import '../../core/storage/latest_analysis_storage.dart';
 
 class CameraAnalysisScreen extends StatefulWidget {
   const CameraAnalysisScreen({required this.isHindi, super.key});
@@ -19,7 +21,7 @@ class CameraAnalysisScreen extends StatefulWidget {
 class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final CameraAnalysisAiService _aiService = CameraAnalysisAiService();
-
+  final LatestAnalysisStorage _latestAnalysisStorage = LatestAnalysisStorage();
   Uint8List? _imageBytes;
   CameraAnalysisResult? _analysisResult;
   String _selectedImageSource = 'unknown';
@@ -97,6 +99,17 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
         imageBytes: imageBytes,
         imageSource: _selectedImageSource,
       );
+
+      final preferences = await SharedPreferences.getInstance();
+      final identifiedFeed = preferences.getString('identifiedFeedType');
+
+      if (identifiedFeed != null &&
+          result.analysisSource == 'firebase-ai-logic') {
+        await _latestAnalysisStorage.saveCameraResult(
+          result: result,
+          feedType: identifiedFeed,
+        );
+      }
 
       if (!mounted) return;
 

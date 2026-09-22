@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/models/complete_test_evidence.dart';
+import '../../core/models/camera_analysis_result.dart';
+import '../../core/storage/latest_analysis_storage.dart';
 import '../../core/models/device_reading.dart';
 import '../../core/models/feed_reference_profile.dart';
 import '../../core/models/feed_test_result.dart';
@@ -32,6 +33,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
   final TestHistoryStorage _historyStorage = TestHistoryStorage();
   final TextEditingController _sampleIdController = TextEditingController();
   final TextEditingController _batchIdController = TextEditingController();
+  final LatestAnalysisStorage _latestAnalysisStorage = LatestAnalysisStorage();
 
   String _text(String english, String hindi) {
     return widget.isHindi ? hindi : english;
@@ -114,6 +116,32 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     }
   }
 
+  String _cameraImpurityStatus(CameraAnalysisResult? result) {
+    if (result == null) return 'Not analysed';
+
+    const categories = ['sand_or_soil', 'stones', 'mould', 'foreign_material'];
+
+    final detected = <String>[];
+
+    for (final category in categories) {
+      final finding = result.findingFor(category);
+      final level = finding?.level;
+
+      if (level != null &&
+          level != 'not_detected' &&
+          level != 'none' &&
+          level != 'low') {
+        detected.add('$category: $level');
+      }
+    }
+
+    if (detected.isEmpty) {
+      return 'No major visible impurity detected';
+    }
+
+    return detected.join(', ');
+  }
+
   Future<void> _startCompleteTest() async {
     if (!widget.isDeviceConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,39 +204,77 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
     final productionGoal =
         preferences.getString('productionGoal') ?? 'Not provided';
 
-    final evidence = CompleteTestEvidence.prototype(
-      sampleId: sampleId,
+    final storedNir = await _latestAnalysisStorage.getNirReading(
       feedType: _selectedFeed,
     );
 
-    final nirReading = evidence.nirReading;
-    final cameraResult = evidence.cameraResult;
-    final phResult = evidence.phResult;
+    final cameraResult = await _latestAnalysisStorage.getCameraResult(
+      feedType: _selectedFeed,
+    );
 
-    final prototypeScore = _prototypeScore(nirReading);
+    final phResult = await _latestAnalysisStorage.getPhResult(
+      feedType: _selectedFeed,
+    );
+
+    final nirReading =
+        storedNir ??
+        DeviceReading.demo(sampleId: sampleId, feedType: _selectedFeed);
+
+    final missingModules = <String>[
+      if (storedNir == null) 'NIR',
+      if (cameraResult == null) 'camera',
+      if (phResult == null) 'pH',
+    ];
+
+    final score = _prototypeScore(nirReading);
     final nutritionStatus = _nutritionStatus(nirReading);
+    final impurityStatus = _cameraImpurityStatus(cameraResult);
+
+    final usesSimulatedNir =
+        storedNir == null || nirReading.scanSource == 'simulated-prototype';
+
+    final hasAllEvidence = missingModules.isEmpty;
+
+    final isFullyValidated =
+        hasAllEvidence &&
+        !usesSimulatedNir &&
+        cameraResult!.isValidated &&
+        phResult!.isValidated;
+
+    final dataSource = usesSimulatedNir
+        ? 'simulated-prototype'
+        : hasAllEvidence
+        ? 'combined-screening'
+        : 'partial-analysis';
+
+    final missingText = missingModules.isEmpty
+        ? 'All available module results were combined.'
+        : 'Missing modules: ${missingModules.join(', ')}.';
+
+    final missingTextHindi = missingModules.isEmpty
+        ? 'सभी उपलब्ध मॉड्यूल परिणामों को जोड़ा गया है।'
+        : 'अनुपलब्ध मॉड्यूल: ${missingModules.join(', ')}।';
+
     final result = FeedTestResult(
       id: completedAt.microsecondsSinceEpoch.toString(),
       feedType: _selectedFeed,
       testType: 'Complete Test',
-      score: prototypeScore,
-      riskLevel: 'UNVERIFIED',
-      phValue: phResult.estimatedPh,
+      score: score,
+      riskLevel: isFullyValidated ? 'SCREENED' : 'UNVERIFIED',
+      phValue: phResult?.estimatedPh ?? 0,
       nutritionStatus: nutritionStatus,
-      impurityStatus: cameraResult.imageSource == 'not-captured'
-          ? 'Not analysed'
-          : 'Unverified camera result',
-      recommendationEnglish: 'This combined result is a prototype preview. Nutrient values are simulated, while camera and pH models are not connected. Do not make a feeding decision from this result; confirm the sample through physical inspection, calibrated testing and expert advice.',
-      recommendationHindi: 'यह संयुक्त परिणाम एक प्रोटोटाइप पूर्वावलोकन है। पोषक मान सिम्युलेटेड हैं तथा कैमरा और pH मॉडल अभी कनेक्ट नहीं हैं। इस परिणाम के आधार पर चारा खिलाने का निर्णय न लें; भौतिक निरीक्षण, कैलिब्रेटेड जाँच और विशेषज्ञ सलाह से नमूने की पुष्टि करें।',
+      impurityStatus: impurityStatus,
+      recommendationEnglish:
+          '$missingText This combined result is screening guidance only. Confirm suspicious or important feeding decisions using calibrated testing and qualified expert advice.',
+      recommendationHindi:
+          '$missingTextHindi यह संयुक्त परिणाम केवल स्क्रीनिंग मार्गदर्शन है। संदिग्ध या महत्वपूर्ण चारा निर्णय की पुष्टि कैलिब्रेटेड जाँच और योग्य विशेषज्ञ की सलाह से करें।',
       createdAt: completedAt,
       sampleId: nirReading.sampleId,
       batchId: batchId,
       animalType: animalType,
       animalBreed: animalBreed,
       productionGoal: productionGoal,
-      dataSource: evidence.usesSimulatedData
-          ? 'simulated-prototype'
-          : 'combined-device-analysis',
+      dataSource: dataSource,
       deviceId: nirReading.device,
       firmwareVersion: nirReading.firmwareVersion,
       calibrationVersion: nirReading.calibrationVersion,
@@ -217,7 +283,7 @@ class _CompleteTestScreenState extends State<CompleteTestScreen> {
       fiber: nirReading.fiber,
       fat: nirReading.fat,
       ash: nirReading.ash,
-      isLaboratoryValidated: evidence.isFullyValidated,
+      isLaboratoryValidated: isFullyValidated,
     );
 
     await _historyStorage.saveResult(result);
