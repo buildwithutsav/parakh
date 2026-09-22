@@ -10,6 +10,7 @@ class LatestAnalysisStorage {
   static const String _nirKey = 'latest_nir_analysis';
   static const String _cameraKey = 'latest_camera_analysis';
   static const String _phKey = 'latest_ph_analysis';
+  static const Duration _maximumResultAge = Duration(minutes: 30);
 
   Future<void> saveNirReading(DeviceReading reading) async {
     final preferences = await SharedPreferences.getInstance();
@@ -95,8 +96,20 @@ class LatestAnalysisStorage {
 
       final storedFeedType = decoded['feedType']?.toString();
       final rawResult = decoded['result'];
+      final savedAt = DateTime.tryParse(decoded['savedAt']?.toString() ?? '');
 
-      if (storedFeedType != feedType || rawResult is! Map) {
+      if (storedFeedType != feedType || rawResult is! Map || savedAt == null) {
+        return null;
+      }
+
+      final now = DateTime.now();
+      final resultAge = now.difference(savedAt);
+
+      final isFromUnexpectedFuture = savedAt.isAfter(
+        now.add(const Duration(minutes: 5)),
+      );
+
+      if (resultAge > _maximumResultAge || isFromUnexpectedFuture) {
         return null;
       }
 
