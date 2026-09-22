@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/feed_identification_result.dart';
+import '../../core/services/feed_identification_ai_service.dart';
 import '../../core/theme/parakh_colors.dart';
 
 class FeedIdentificationScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class FeedIdentificationScreen extends StatefulWidget {
 
 class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
   final ImagePicker _imagePicker = ImagePicker();
+  final FeedIdentificationAiService _aiService = FeedIdentificationAiService();
 
   static const List<String> _feedTypes = [
     'Maize Silage',
@@ -74,7 +76,9 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
   }
 
   Future<void> _analyseImage() async {
-    if (_imageBytes == null) {
+    final imageBytes = _imageBytes;
+
+    if (imageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -93,16 +97,50 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
       _result = null;
     });
 
-    await Future<void>.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
-    setState(() {
-      _result = FeedIdentificationResult.modelNotConnected(
+    try {
+      final result = await _aiService.analyse(
+        imageBytes: imageBytes,
         imageSource: _imageSource,
       );
-      _isAnalysing = false;
-    });
+
+      if (!mounted) return;
+
+      setState(() {
+        _result = result;
+        _isAnalysing = false;
+
+        final bestPrediction = result.bestPrediction;
+
+        if (bestPrediction != null &&
+            bestPrediction.feedType != 'Unknown' &&
+            _feedTypes.contains(bestPrediction.feedType)) {
+          _confirmedFeed = bestPrediction.feedType;
+        }
+      });
+    } catch (error) {
+      debugPrint('Feed identification failed: $error');
+
+      if (!mounted) return;
+
+      setState(() {
+        _result = FeedIdentificationResult.modelNotConnected(
+          imageSource: _imageSource,
+        );
+        _isAnalysing = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'AI identification is temporarily unavailable. Please select the feed manually.',
+              'AI पहचान अभी उपलब्ध नहीं है। कृपया चारे का प्रकार स्वयं चुनें।',
+            ),
+          ),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
   }
 
   void _clearImage() {
@@ -110,6 +148,7 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
       _imageBytes = null;
       _imageSource = 'unknown';
       _result = null;
+      _isAnalysing = false;
     });
   }
 
@@ -149,7 +188,7 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
                   _buildAnalyseButton(),
                 ],
                 if (_result != null) ...[
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   _buildResultCard(),
                 ],
               ],

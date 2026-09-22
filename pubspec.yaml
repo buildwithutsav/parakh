@@ -39,7 +39,9 @@ dependencies:
   flutter_tts: ^4.2.5
   pdf: ^3.13.1
   printing: ^5.15.1
-
+  firebase_core: ^4.15.0
+  firebase_app_check: ^0.4.8
+  firebase_ai: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

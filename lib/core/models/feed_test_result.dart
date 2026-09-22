@@ -76,6 +76,7 @@ class FeedTestResult {
       'recommendationEnglish': recommendationEnglish,
       'recommendationHindi': recommendationHindi,
       'createdAt': createdAt.toIso8601String(),
+
       'sampleId': sampleId,
       'batchId': batchId,
       'animalType': animalType,
