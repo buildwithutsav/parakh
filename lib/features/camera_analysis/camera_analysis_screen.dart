@@ -8,6 +8,7 @@ import '../../core/models/camera_analysis_result.dart';
 import '../../core/services/camera_analysis_ai_service.dart';
 import '../../core/theme/parakh_colors.dart';
 import '../../core/storage/latest_analysis_storage.dart';
+import '../../core/services/ai_error_handler.dart';
 
 class CameraAnalysisScreen extends StatefulWidget {
   const CameraAnalysisScreen({required this.isHindi, super.key});
@@ -121,6 +122,8 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
     } catch (error) {
       debugPrint('Camera AI analysis failed: $error');
 
+      final failure = AiFailure.fromError(error);
+
       if (!mounted) return;
 
       setState(() {
@@ -133,12 +136,7 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _text(
-              'AI screening is temporarily unavailable. Review the image manually.',
-              'AI स्क्रीनिंग अभी उपलब्ध नहीं है। तस्वीर की मैन्युअल जाँच करें।',
-            ),
-          ),
+          content: Text(failure.localizedMessage(isHindi: widget.isHindi)),
           backgroundColor: const Color(0xFFB75B4A),
         ),
       );

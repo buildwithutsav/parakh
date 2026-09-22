@@ -7,6 +7,7 @@ import '../../core/theme/parakh_colors.dart';
 import '../../core/models/ph_analysis_result.dart';
 import '../../core/services/ph_analysis_ai_service.dart';
 import '../../core/storage/latest_analysis_storage.dart';
+import '../../core/services/ai_error_handler.dart';
 
 class PhAnalysisScreen extends StatefulWidget {
   const PhAnalysisScreen({required this.isHindi, super.key});
@@ -123,7 +124,7 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
       });
     } catch (error) {
       debugPrint('pH AI analysis failed: $error');
-
+      final failure = AiFailure.fromError(error);
       if (!mounted) return;
 
       setState(() {
@@ -137,12 +138,7 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _text(
-              'AI pH estimation is temporarily unavailable. Confirm the sample with a pH meter.',
-              'AI pH अनुमान अभी उपलब्ध नहीं है। नमूने की पुष्टि pH मीटर से करें।',
-            ),
-          ),
+          content: Text(failure.localizedMessage(isHindi: widget.isHindi)),
           backgroundColor: const Color(0xFFB75B4A),
         ),
       );

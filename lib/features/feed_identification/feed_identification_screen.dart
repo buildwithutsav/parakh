@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/models/feed_identification_result.dart';
 import '../../core/services/feed_identification_ai_service.dart';
 import '../../core/theme/parakh_colors.dart';
+import '../../core/services/ai_error_handler.dart';
 
 class FeedIdentificationScreen extends StatefulWidget {
   const FeedIdentificationScreen({required this.isHindi, super.key});
@@ -119,7 +120,7 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
       });
     } catch (error) {
       debugPrint('Feed identification failed: $error');
-
+      final failure = AiFailure.fromError(error);
       if (!mounted) return;
 
       setState(() {
@@ -131,12 +132,7 @@ class _FeedIdentificationScreenState extends State<FeedIdentificationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _text(
-              'AI identification is temporarily unavailable. Please select the feed manually.',
-              'AI पहचान अभी उपलब्ध नहीं है। कृपया चारे का प्रकार स्वयं चुनें।',
-            ),
-          ),
+          content: Text(failure.localizedMessage(isHindi: widget.isHindi)),
           backgroundColor: const Color(0xFFB75B4A),
         ),
       );
