@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/parakh_colors.dart';
 import '../../core/models/ph_analysis_result.dart';
+import '../../core/services/ph_analysis_ai_service.dart';
 
 class PhAnalysisScreen extends StatefulWidget {
   const PhAnalysisScreen({required this.isHindi, super.key});
@@ -17,7 +18,7 @@ class PhAnalysisScreen extends StatefulWidget {
 
 class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
-
+  final PhAnalysisAiService _aiService = PhAnalysisAiService();
   Uint8List? _imageBytes;
   PhAnalysisResult? _analysisResult;
   String _selectedImageSource = 'unknown';
@@ -69,7 +70,9 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
   }
 
   Future<void> _analyseStrip() async {
-    if (_imageBytes == null) {
+    final imageBytes = _imageBytes;
+
+    if (imageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -85,21 +88,50 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
 
     setState(() {
       _isAnalysing = true;
+      _analysisResult = null;
       _showResult = false;
     });
 
-    await Future<void>.delayed(const Duration(seconds: 3));
-
-    if (!mounted) return;
-
-    setState(() {
-      _analysisResult = PhAnalysisResult.prototype(
-        feedType: _selectedFeed,
+    try {
+      final result = await _aiService.analyse(
+        imageBytes: imageBytes,
         imageSource: _selectedImageSource,
+        feedType: _selectedFeed,
       );
-      _isAnalysing = false;
-      _showResult = true;
-    });
+
+      if (!mounted) return;
+
+      setState(() {
+        _analysisResult = result;
+        _isAnalysing = false;
+        _showResult = true;
+      });
+    } catch (error) {
+      debugPrint('pH AI analysis failed: $error');
+
+      if (!mounted) return;
+
+      setState(() {
+        _analysisResult = PhAnalysisResult.prototype(
+          feedType: _selectedFeed,
+          imageSource: _selectedImageSource,
+        );
+        _isAnalysing = false;
+        _showResult = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'AI pH estimation is temporarily unavailable. Confirm the sample with a pH meter.',
+              'AI pH अनुमान अभी उपलब्ध नहीं है। नमूने की पुष्टि pH मीटर से करें।',
+            ),
+          ),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
   }
 
   void _clearImage() {
@@ -414,6 +446,13 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
     if (result == null) {
       return const SizedBox.shrink();
     }
+    final isAiResult = result.analysisSource == 'firebase-ai-logic';
+
+    final hasUsableEstimate =
+        isAiResult &&
+        result.stripQuality != 'unusable' &&
+        result.confidence != null &&
+        result.confidence! > 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -438,10 +477,20 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
-                    _text(
-                      'Prototype result: the pH image model and colour calibration are not connected yet.',
-                      'प्रोटोटाइप परिणाम: pH तस्वीर मॉडल और रंग कैलिब्रेशन अभी कनेक्ट नहीं हैं।',
-                    ),
+                    isAiResult
+                        ? hasUsableEstimate
+                              ? _text(
+                                  'AI compared the reacted strip with the visible reference chart.',
+                                  'AI ने प्रतिक्रिया वाली स्ट्रिप की तुलना दिखाई देने वाले संदर्भ चार्ट से की है।',
+                                )
+                              : _text(
+                                  'The strip or reference chart could not be read reliably. Retake the image.',
+                                  'स्ट्रिप या संदर्भ चार्ट को विश्वसनीय रूप से नहीं पढ़ा जा सका। तस्वीर दोबारा लें।',
+                                )
+                        : _text(
+                            'AI pH estimation is unavailable. This is a prototype fallback.',
+                            'AI pH अनुमान उपलब्ध नहीं है। यह प्रोटोटाइप फॉलबैक है।',
+                          ),
                     style: const TextStyle(
                       color: Color(0xFF795315),
                       fontSize: 12,
@@ -455,7 +504,9 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           ),
           const SizedBox(height: 18),
           Text(
-            _text('Prototype pH value', 'प्रोटोटाइप pH मान'),
+            hasUsableEstimate
+                ? _text('Estimated pH', 'अनुमानित pH')
+                : _text('pH estimate', 'pH अनुमान'),
             style: const TextStyle(
               color: Color(0xFF68736B),
               fontWeight: FontWeight.w600,
@@ -463,7 +514,7 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            result.estimatedPh.toStringAsFixed(1),
+            hasUsableEstimate ? result.estimatedPh.toStringAsFixed(1) : '—',
             style: const TextStyle(
               color: Color(0xFF2F7650),
               fontSize: 47,
@@ -478,10 +529,15 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              _text(
-                'Not estimated from this image',
-                'इस तस्वीर से अनुमानित नहीं',
-              ),
+              hasUsableEstimate
+                  ? _text(
+                      'Visual estimate — confirm with a pH meter',
+                      'दृश्य अनुमान — pH मीटर से पुष्टि करें',
+                    )
+                  : _text(
+                      'Unable to estimate from this image',
+                      'इस तस्वीर से अनुमान नहीं लगाया जा सका',
+                    ),
               style: const TextStyle(
                 color: Color(0xFF9A6815),
                 fontSize: 12,
@@ -533,6 +589,11 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
                       : '${(result.confidence! * 100).toStringAsFixed(1)}%',
                 ),
                 _phMetadataItem(
+                  Icons.visibility_outlined,
+                  _text('Strip quality', 'स्ट्रिप गुणवत्ता'),
+                  result.stripQuality,
+                ),
+                _phMetadataItem(
                   Icons.water_drop_outlined,
                   _text('Preparation', 'तैयारी'),
                   result.samplePreparation,
@@ -570,10 +631,15 @@ class _PhAnalysisScreenState extends State<PhAnalysisScreen> {
           ),
           const SizedBox(height: 13),
           Text(
-            _text(
-              'The displayed value is a simulated interface placeholder, not a measurement or prediction from the selected image.',
-              'दिखाया गया मान सिम्युलेटेड इंटरफेस प्लेसहोल्डर है, चुनी गई तस्वीर से प्राप्त माप या भविष्यवाणी नहीं।',
-            ),
+            isAiResult
+                ? _text(
+                    'This is an unvalidated visual estimate, not a calibrated measurement. Confirm feeding decisions with a pH meter or laboratory test.',
+                    'यह एक असत्यापित दृश्य अनुमान है, कैलिब्रेटेड माप नहीं। आहार संबंधी निर्णयों की पुष्टि pH मीटर या प्रयोगशाला जाँच से करें।',
+                  )
+                : _text(
+                    'No AI estimate was produced. Do not use the prototype fallback for feeding decisions.',
+                    'कोई AI अनुमान प्राप्त नहीं हुआ। आहार संबंधी निर्णयों के लिए प्रोटोटाइप फॉलबैक का उपयोग न करें।',
+                  ),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF8F352C),
