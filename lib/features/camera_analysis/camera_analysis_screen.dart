@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/camera_analysis_result.dart';
+import '../../core/services/camera_analysis_ai_service.dart';
 import '../../core/theme/parakh_colors.dart';
 
 class CameraAnalysisScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class CameraAnalysisScreen extends StatefulWidget {
 
 class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   final ImagePicker _imagePicker = ImagePicker();
+  final CameraAnalysisAiService _aiService = CameraAnalysisAiService();
 
   Uint8List? _imageBytes;
   CameraAnalysisResult? _analysisResult;
@@ -68,7 +70,9 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
   }
 
   Future<void> _analyseImage() async {
-    if (_imageBytes == null) {
+    final imageBytes = _imageBytes;
+
+    if (imageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -84,20 +88,48 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
 
     setState(() {
       _isAnalysing = true;
+      _analysisResult = null;
       _showResult = false;
     });
 
-    await Future<void>.delayed(const Duration(seconds: 3));
-
-    if (!mounted) return;
-
-    setState(() {
-      _analysisResult = CameraAnalysisResult.prototype(
+    try {
+      final result = await _aiService.analyse(
+        imageBytes: imageBytes,
         imageSource: _selectedImageSource,
       );
-      _isAnalysing = false;
-      _showResult = true;
-    });
+
+      if (!mounted) return;
+
+      setState(() {
+        _analysisResult = result;
+        _isAnalysing = false;
+        _showResult = true;
+      });
+    } catch (error) {
+      debugPrint('Camera AI analysis failed: $error');
+
+      if (!mounted) return;
+
+      setState(() {
+        _analysisResult = CameraAnalysisResult.prototype(
+          imageSource: _selectedImageSource,
+        );
+        _isAnalysing = false;
+        _showResult = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'AI screening is temporarily unavailable. Review the image manually.',
+              'AI स्क्रीनिंग अभी उपलब्ध नहीं है। तस्वीर की मैन्युअल जाँच करें।',
+            ),
+          ),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
   }
 
   void _clearImage() {
@@ -332,6 +364,7 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
     if (result == null) {
       return const SizedBox.shrink();
     }
+    final isAiResult = result.analysisSource == 'firebase-ai-logic';
 
     final sandFinding = result.findingFor('sand_or_soil');
     final stoneFinding = result.findingFor('stones');
@@ -368,10 +401,15 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _text(
-                        'Prototype visual screening',
-                        'प्रोटोटाइप दृश्य स्क्रीनिंग',
-                      ),
+                      isAiResult
+                          ? _text(
+                              'AI visual screening complete',
+                              'AI दृश्य स्क्रीनिंग पूरी हुई',
+                            )
+                          : _text(
+                              'Prototype visual screening',
+                              'प्रोटोटाइप दृश्य स्क्रीनिंग',
+                            ),
                       style: const TextStyle(
                         color: Color(0xFF1B2B21),
                         fontSize: 17,
@@ -380,10 +418,20 @@ class _CameraAnalysisScreenState extends State<CameraAnalysisScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _text(
-                        'AI model not connected yet',
-                        'AI मॉडल अभी कनेक्ट नहीं है',
-                      ),
+                      isAiResult
+                          ? result.imageQuality == 'acceptable'
+                                ? _text(
+                                    'Image quality acceptable',
+                                    'तस्वीर की गुणवत्ता स्वीकार्य है',
+                                  )
+                                : _text(
+                                    'Poor image quality — review manually',
+                                    'तस्वीर की गुणवत्ता खराब है — मैन्युअल जाँच करें',
+                                  )
+                          : _text(
+                              'AI screening unavailable',
+                              'AI स्क्रीनिंग उपलब्ध नहीं है',
+                            ),
                       style: const TextStyle(
                         color: Color(0xFF9A6815),
                         fontWeight: FontWeight.w700,
