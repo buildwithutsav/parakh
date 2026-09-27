@@ -145,7 +145,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     final weight = preferences.getString('animalWeight') ?? '';
     final milkYield = preferences.getString('dailyMilkYield') ?? '';
     final milkFat = preferences.getString('milkFatPercent') ?? '';
-
+await preferences.setBool('animalProfileCompleted', true);
     if (!mounted) return;
 
     _weightController.text = weight;
@@ -234,7 +234,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     );
 
     if (!mounted) return;
-
+await preferences.setBool('animalProfileCompleted', true);
     Navigator.of(context).pop(true);
   }
 
@@ -653,7 +653,9 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 width: double.infinity,
                 height: 102,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) {
+                errorBuilder: (context, error, stackTrace) {
+  debugPrint('Animal image failed: $imagePath');
+  debugPrint('Error: $error');
                   return Center(
                     child: Icon(
                       fallbackIcon,
@@ -740,7 +742,9 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         imagePath,
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) {
+                        errorBuilder: (context, error, stackTrace) {
+  debugPrint('Animal image failed: $imagePath');
+  debugPrint('Error: $error');
                           return const Center(
                             child: Icon(
                               Icons.image_outlined,

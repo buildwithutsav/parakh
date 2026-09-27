@@ -164,6 +164,34 @@ class DeviceReading {
       calibrationVersion: 'prototype-rules-v1',
     );
   }
+  DeviceReading withNutrientPrediction({
+    required double protein,
+    required double fiber,
+    required double fat,
+    required String calibrationVersion,
+  }) {
+    return DeviceReading(
+      device: device,
+      sampleId: sampleId,
+      feedType: feedType,
+      moisture: moisture,
+      protein: protein,
+      fiber: fiber,
+      fat: fat,
+      ash: ash,
+      ph: ph,
+      temperature: temperature,
+      status: status,
+      receivedAt: receivedAt,
+      spectralChannels: spectralChannels,
+      firmwareVersion: firmwareVersion,
+      scanSource: scanSource,
+      scanQuality: scanQuality,
+      integrationTimeMs: integrationTimeMs,
+      sensorGain: sensorGain,
+      calibrationVersion: calibrationVersion,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {

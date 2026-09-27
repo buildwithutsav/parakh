@@ -1,11 +1,15 @@
+import 'dart:async';
+
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 
 import '../../core/theme/parakh_colors.dart';
 import '../device/device_connection_screen.dart';
 import '../analysis/nir_analysis_screen.dart';
-import '../camera_analysis/camera_analysis_screen.dart';
-import '../feed_identification/feed_identification_screen.dart';
+
 import '../ph_analysis/ph_analysis_screen.dart';
 import '../complete_test/complete_test_screen.dart';
 import '../history/history_screen.dart';
@@ -13,6 +17,7 @@ import '../advice/advice_screen.dart';
 import '../settings/settings_screen.dart';
 import '../animal_profile/animal_profile_screen.dart';
 import '../storage_monitoring/storage_monitoring_screen.dart';
+import '../sakhi/sakhi_assistant_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -27,12 +32,33 @@ class _HomeScreenState extends State<HomeScreen> {
   late bool _isHindi;
   bool _isDeviceConnected = false;
   bool _isDemoMode = false;
+  final GlobalKey _languageTutorialKey = GlobalKey();
+  final GlobalKey _deviceTutorialKey = GlobalKey();
+  final GlobalKey _nirTutorialKey = GlobalKey();
+  final GlobalKey _phTutorialKey = GlobalKey();
+  final GlobalKey _animalProfileTutorialKey = GlobalKey();
+  final GlobalKey _storageTutorialKey = GlobalKey();
+  final GlobalKey _completeTestTutorialKey = GlobalKey();
+  final GlobalKey _sakhiTutorialKey = GlobalKey();
+  final GlobalKey _navigationTutorialKey = GlobalKey();
+
+  TutorialCoachMark? _tutorialCoachMark;
+  final SpeechToText _wakeSpeech = SpeechToText();
+
+  Timer? _wakeRestartTimer;
+
+  bool _wakeModeEnabled = false;
+  bool _wakeSpeechAvailable = false;
+  bool _isOpeningSakhi = false;
+  final ScrollController _homeScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _isHindi = widget.isHindi;
     _loadDemoMode();
+    _loadWakeMode();
+    _scheduleFirstTutorial();
   }
 
   Future<void> _loadDemoMode() async {
@@ -50,6 +76,59 @@ class _HomeScreenState extends State<HomeScreen> {
     return _isHindi ? hindi : english;
   }
 
+  Future<void> _toggleLanguage() async {
+    final newLanguage = !_isHindi;
+    final preferences = await SharedPreferences.getInstance();
+
+    await preferences.setString('language', newLanguage ? 'hi' : 'en');
+
+    if (!mounted) return;
+
+    setState(() {
+      _isHindi = newLanguage;
+    });
+
+    if (_wakeModeEnabled) {
+      _wakeRestartTimer?.cancel();
+
+      if (_wakeSpeech.isListening) {
+        await _wakeSpeech.stop();
+      }
+
+      if (mounted) {
+        await _startWakeListening();
+      }
+    }
+  }
+
+  Future<void> _openSakhi() async {
+    if (_isOpeningSakhi) return;
+
+    _isOpeningSakhi = true;
+    _wakeRestartTimer?.cancel();
+
+    if (_wakeSpeech.isListening) {
+      await _wakeSpeech.stop();
+    }
+
+    if (!mounted) {
+      _isOpeningSakhi = false;
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SakhiAssistantScreen(isHindi: _isHindi),
+      ),
+    );
+
+    _isOpeningSakhi = false;
+
+    if (mounted && _wakeModeEnabled) {
+      await _startWakeListening();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,13 +138,13 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 680),
             child: ListView(
+              controller: _homeScrollController,
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
               children: [
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildWelcomeCard(),
-                const SizedBox(height: 16),
-                _buildAnimalProfileCard(),
+
                 const SizedBox(height: 22),
                 _buildSectionTitle(_text('Device status', 'डिवाइस की स्थिति')),
                 const SizedBox(height: 12),
@@ -83,6 +162,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        key: _sakhiTutorialKey,
+        onPressed: _openSakhi,
+        backgroundColor: ParakhColors.forestGreen,
+        foregroundColor: Colors.white,
+        elevation: 5,
+        icon: Container(
+          width: 36,
+          height: 36,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: ClipOval(
+            child: Image.asset('assets/images/sakhi.png', fit: BoxFit.cover),
+          ),
+        ),
+        label: Text(
+          _text('Ask Sakhi', 'सखी से पूछें'),
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _buildBottomNavigation(),
     );
   }
@@ -127,14 +229,29 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+        IconButton(
+          tooltip: _wakeModeEnabled
+              ? _text('Disable Hey Sakhi', 'हे सखी बंद करें')
+              : _text('Enable Hey Sakhi', 'हे सखी चालू करें'),
+          onPressed: _toggleWakeMode,
+          icon: Icon(
+            _wakeModeEnabled
+                ? (_wakeSpeech.isListening
+                      ? Icons.mic_rounded
+                      : Icons.mic_none_rounded)
+                : Icons.mic_off_rounded,
+            color: _wakeModeEnabled && _wakeSpeechAvailable
+                ? ParakhColors.forestGreen
+                : const Color(0xFF7A847D),
+          ),
+        ),
+        const SizedBox(width: 4),
+
         InkWell(
-          onTap: () {
-            setState(() {
-              _isHindi = !_isHindi;
-            });
-          },
+          onTap: _toggleLanguage,
           borderRadius: BorderRadius.circular(12),
           child: Container(
+            key: _languageTutorialKey,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -151,6 +268,408 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _loadWakeMode() async {
+    final preferences = await SharedPreferences.getInstance();
+    final enabled = preferences.getBool('sakhiWakeModeEnabled') ?? false;
+
+    if (!mounted) return;
+    setState(() {
+      _wakeModeEnabled = enabled;
+    });
+
+    if (enabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _startWakeListening();
+        }
+      });
+    }
+  }
+
+  Future<void> _toggleWakeMode() async {
+    final enabled = !_wakeModeEnabled;
+    final preferences = await SharedPreferences.getInstance();
+
+    await preferences.setBool('sakhiWakeModeEnabled', enabled);
+
+    if (!mounted) return;
+
+    setState(() {
+      _wakeModeEnabled = enabled;
+    });
+
+    if (enabled) {
+      await _startWakeListening();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'Wake mode enabled. Say “Hey Sakhi”.',
+              'वेक मोड चालू है। “हे सखी” कहें।',
+            ),
+          ),
+          backgroundColor: ParakhColors.forestGreen,
+        ),
+      );
+    } else {
+      _wakeRestartTimer?.cancel();
+      await _wakeSpeech.stop();
+
+      if (!mounted) return;
+
+      setState(() {
+        _wakeSpeechAvailable = false;
+      });
+    }
+  }
+
+  Future<void> _startWakeListening() async {
+    if (!_wakeModeEnabled || _isOpeningSakhi || _wakeSpeech.isListening) {
+      return;
+    }
+
+    final available = await _wakeSpeech.initialize(
+      onStatus: _handleWakeStatus,
+      onError: (error) {
+        debugPrint('Sakhi wake listener error: $error');
+        _scheduleWakeRestart();
+      },
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _wakeSpeechAvailable = available;
+    });
+
+    if (!available || !_wakeModeEnabled || _isOpeningSakhi) {
+      return;
+    }
+
+    await _wakeSpeech.listen(
+      onResult: _handleWakeResult,
+      listenOptions: SpeechListenOptions(
+        localeId: _isHindi ? 'hi_IN' : 'en_IN',
+        partialResults: true,
+        cancelOnError: false,
+        listenMode: ListenMode.dictation,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _handleWakeStatus(String status) {
+    if (status == 'done' || status == 'notListening') {
+      _scheduleWakeRestart();
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _scheduleWakeRestart() {
+    _wakeRestartTimer?.cancel();
+
+    if (!_wakeModeEnabled || _isOpeningSakhi) return;
+
+    _wakeRestartTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        _startWakeListening();
+      }
+    });
+  }
+
+  void _handleWakeResult(SpeechRecognitionResult result) {
+    final words = result.recognizedWords.toLowerCase().trim();
+
+    if (words.isEmpty) return;
+
+    final wakeDetected =
+        words.contains('hey sakhi') ||
+        words.contains('hi sakhi') ||
+        words.contains('hello sakhi') ||
+        words.contains('हे सखी') ||
+        words.contains('हाय सखी');
+
+    if (wakeDetected) {
+      _openSakhi();
+    }
+  }
+
+  Future<void> _scheduleFirstTutorial() async {
+    final preferences = await SharedPreferences.getInstance();
+    final completed = preferences.getBool('homeTutorialCompleted') ?? false;
+
+    if (!mounted || completed) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showHomeTutorial();
+    });
+  }
+
+  Future<void> _saveTutorialCompletion() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('homeTutorialCompleted', true);
+  }
+
+  Future<void> _scrollToCompleteTestAndContinue() async {
+    final targetContext = _completeTestTutorialKey.currentContext;
+
+    if (targetContext != null) {
+      await Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 550),
+        curve: Curves.easeInOut,
+        alignment: 0.45,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+
+    if (!mounted) return;
+
+    _tutorialCoachMark?.next();
+  }
+
+  void _showHomeTutorial() {
+    final targets = <TargetFocus>[
+      _tutorialTarget(
+        id: 'language',
+        key: _languageTutorialKey,
+        title: _text('Choose your language', 'अपनी भाषा चुनें'),
+        description: _text(
+          'Tap here anytime to switch between English and Hindi.',
+          'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
+        ),
+        align: ContentAlign.bottom,
+        showBack: false,
+      ),
+      _tutorialTarget(
+        id: 'device',
+        key: _deviceTutorialKey,
+        title: _text('Connect the device', 'डिवाइस कनेक्ट करें'),
+        description: _text(
+          'Connect the Parakh portable device before starting a real NIR scan.',
+          'वास्तविक NIR स्कैन शुरू करने से पहले परख पोर्टेबल डिवाइस कनेक्ट करें।',
+        ),
+        align: ContentAlign.bottom,
+      ),
+      _tutorialTarget(
+        id: 'animal_profile',
+        key: _animalProfileTutorialKey,
+        title: _text('Add the animal profile', 'पशु प्रोफाइल जोड़ें'),
+        description: _text(
+          'Add the animal type, breed, stage and production goal before interpreting feed suitability.',
+          'चारे की उपयुक्तता समझने से पहले पशु का प्रकार, नस्ल, अवस्था और उत्पादन लक्ष्य जोड़ें।',
+        ),
+        align: ContentAlign.top,
+      ),
+      _tutorialTarget(
+        id: 'nir',
+        key: _nirTutorialKey,
+        title: _text('Run an NIR feed scan', 'NIR चारा स्कैन करें'),
+        description: _text(
+          'Use this option for camera screening and spectral feed analysis.',
+          'कैमरा स्क्रीनिंग और स्पेक्ट्रल चारा विश्लेषण के लिए इस विकल्प का उपयोग करें।',
+        ),
+        align: ContentAlign.bottom,
+      ),
+      _tutorialTarget(
+        id: 'ph',
+        key: _phTutorialKey,
+        title: _text('Test the pH strip', 'pH स्ट्रिप जाँचें'),
+        description: _text(
+          'Photograph the prepared pH strip under clear, neutral lighting.',
+          'तैयार pH स्ट्रिप की साफ और सामान्य रोशनी में तस्वीर लें।',
+        ),
+        align: ContentAlign.bottom,
+      ),
+      _tutorialTarget(
+        id: 'storage',
+        key: _storageTutorialKey,
+        title: _text('Review storage conditions', 'भंडारण स्थिति देखें'),
+        description: _text(
+          'Use Storage Monitor to screen temperature, humidity and storage risks.',
+          'तापमान, आर्द्रता और भंडारण जोखिम देखने के लिए भंडारण निगरानी का उपयोग करें।',
+        ),
+        align: ContentAlign.top,
+        onNext: _scrollToCompleteTestAndContinue,
+      ),
+      _tutorialTarget(
+        id: 'complete_test',
+        key: _completeTestTutorialKey,
+        title: _text('Review the complete test', 'संपूर्ण जाँच देखें'),
+        description: _text(
+          'This section combines the available NIR, camera and pH evidence.',
+          'यह भाग उपलब्ध NIR, कैमरा और pH परिणामों को एक साथ दिखाता है।',
+        ),
+        align: ContentAlign.top,
+      ),
+      _tutorialTarget(
+        id: 'sakhi',
+        key: _sakhiTutorialKey,
+        title: _text('Ask Sakhi for help', 'सखी से सहायता लें'),
+        description: _text(
+          'Open Sakhi for bilingual guidance, voice questions and spoken answers.',
+          'द्विभाषी मार्गदर्शन, आवाज में प्रश्न और बोले गए उत्तर के लिए सखी खोलें।',
+        ),
+        align: ContentAlign.top,
+      ),
+      _tutorialTarget(
+        id: 'navigation',
+        key: _navigationTutorialKey,
+        title: _text('Explore Parakh', 'परख के विकल्प देखें'),
+        description: _text(
+          'Use this bar to open Home, History, Advice and Settings. The tutorial can be replayed from Settings.',
+          'होम, इतिहास, सुझाव और सेटिंग्स खोलने के लिए इस पट्टी का उपयोग करें। ट्यूटोरियल सेटिंग्स से दोबारा चलाया जा सकता है।',
+        ),
+        align: ContentAlign.top,
+        isLast: true,
+      ),
+    ];
+
+    _tutorialCoachMark = TutorialCoachMark(
+      targets: targets,
+      colorShadow: const Color(0xFF10251A),
+      opacityShadow: 0.88,
+      paddingFocus: 8,
+      pulseEnable: true,
+      textSkip: _text('SKIP', 'छोड़ें'),
+      textStyleSkip: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+      ),
+      onFinish: () {
+        _saveTutorialCompletion();
+      },
+      onSkip: () {
+        _saveTutorialCompletion();
+        return true;
+      },
+    );
+
+    _tutorialCoachMark!.show(context: context);
+  }
+
+  TargetFocus _tutorialTarget({
+    required String id,
+    required GlobalKey key,
+    required String title,
+    required String description,
+    required ContentAlign align,
+    bool showBack = true,
+    bool isLast = false,
+    VoidCallback? onNext,
+  }) {
+    return TargetFocus(
+      identify: id,
+      keyTarget: key,
+      shape: ShapeLightFocus.RRect,
+      radius: 16,
+      paddingFocus: 6,
+      enableOverlayTab: false,
+      enableTargetTab: false,
+      contents: [
+        TargetContent(
+          align: align,
+          child: _tutorialContent(
+            title: title,
+            description: description,
+            showBack: showBack,
+            isLast: isLast,
+            onNext: onNext,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tutorialContent({
+    required String title,
+    required String description,
+    required bool showBack,
+    required bool isLast,
+    VoidCallback? onNext,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 330),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAF5),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF174D35),
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            description,
+            style: const TextStyle(
+              color: Color(0xFF435149),
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (showBack)
+                TextButton(
+                  onPressed: () => _tutorialCoachMark?.previous(),
+                  child: Text(_text('Back', 'पीछे')),
+                ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => _tutorialCoachMark?.skip(),
+                child: Text(_text('Skip', 'छोड़ें')),
+              ),
+              const SizedBox(width: 6),
+              FilledButton(
+                onPressed: () {
+                  if (isLast) {
+                    _tutorialCoachMark?.finish();
+                  } else if (onNext != null) {
+                    onNext();
+                  } else {
+                    _tutorialCoachMark?.next();
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: ParakhColors.forestGreen,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  isLast ? _text('Finish', 'पूरा करें') : _text('Next', 'आगे'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -179,7 +698,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _text('Namaste, Farmer!', 'नमस्ते, किसान!'),
+                  _text('Namaste!', 'नमस्ते!'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 23,
@@ -231,77 +750,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAnimalProfileCard() {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(17),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AnimalProfileScreen(isHindi: _isHindi),
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(17),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: const Color(0xFFE0E8DD)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE7F1E9),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(
-                  Icons.pets_rounded,
-                  color: ParakhColors.forestGreen,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _text('Animal profile', 'पशु प्रोफाइल'),
-                      style: const TextStyle(
-                        color: Color(0xFF26372D),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _text(
-                        'Select animal, breed and production goal',
-                        'पशु, नस्ल और उत्पादन लक्ष्य चुनें',
-                      ),
-                      style: const TextStyle(
-                        color: Color(0xFF748078),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF748078)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildDeviceCard() {
     return Container(
+      key: _deviceTutorialKey,
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -394,9 +845,13 @@ class _HomeScreenState extends State<HomeScreen> {
       mainAxisExtent: 155,
       children: [
         _analysisCard(
+          key: _nirTutorialKey,
           icon: Icons.sensors_rounded,
-          title: _text('NIR Scan', 'NIR स्कैन'),
-          subtitle: _text('Nutrient analysis', 'पोषक तत्व जाँच'),
+          title: _text('NIR Feed Scan', 'NIR चारा स्कैन'),
+          subtitle: _text(
+            'Camera and spectral scan',
+            'कैमरा और स्पेक्ट्रल स्कैन',
+          ),
           color: const Color(0xFF2F7650),
           onTap: () {
             Navigator.of(context).push(
@@ -410,79 +865,13 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         _analysisCard(
-          icon: Icons.image_search_rounded,
-          title: _text('Identify Feed', 'चारा पहचानें'),
-          subtitle: _text('Recognise feed type', 'चारे का प्रकार पहचानें'),
-          color: const Color(0xFF5B7F3A),
-          onTap: () async {
-            final identifiedFeed = await Navigator.of(context).push<String>(
-              MaterialPageRoute<String>(
-                builder: (_) => FeedIdentificationScreen(isHindi: _isHindi),
-              ),
-            );
-
-            if (!mounted || identifiedFeed == null) return;
-            final preferences = await SharedPreferences.getInstance();
-            await preferences.setString('identifiedFeedType', identifiedFeed);
-
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  _text(
-                    '$identifiedFeed selected for testing.',
-                    '$identifiedFeed को जाँच के लिए चुना गया है।',
-                  ),
-                ),
-                backgroundColor: ParakhColors.forestGreen,
-              ),
-            );
-          },
-        ),
-        _analysisCard(
-          icon: Icons.image_search_rounded,
-          title: _text('Identify Feed', 'चारा पहचानें'),
-          subtitle: _text('Recognise feed type', 'चारे का प्रकार पहचानें'),
-          color: const Color(0xFF5B7F3A),
-          onTap: () async {
-            final identifiedFeed = await Navigator.of(context).push<String>(
-              MaterialPageRoute<String>(
-                builder: (_) => FeedIdentificationScreen(isHindi: _isHindi),
-              ),
-            );
-
-            if (!mounted || identifiedFeed == null) return;
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  _text(
-                    '$identifiedFeed selected for testing.',
-                    '$identifiedFeed को जाँच के लिए चुना गया है।',
-                  ),
-                ),
-                backgroundColor: ParakhColors.forestGreen,
-              ),
-            );
-          },
-        ),
-        _analysisCard(
-          icon: Icons.camera_alt_rounded,
-          title: _text('Camera Test', 'कैमरा जाँच'),
-          subtitle: _text('Detect impurities', 'अशुद्धियाँ पहचानें'),
-          color: const Color(0xFFD17B3F),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => CameraAnalysisScreen(isHindi: _isHindi),
-              ),
-            );
-          },
-        ),
-        _analysisCard(
+          key: _phTutorialKey,
           icon: Icons.science_rounded,
           title: _text('pH Test', 'pH जाँच'),
-          subtitle: _text('Scan test strip', 'टेस्ट स्ट्रिप स्कैन करें'),
+          subtitle: _text(
+            'Scan a pH test strip',
+            'pH टेस्ट स्ट्रिप स्कैन करें',
+          ),
           color: const Color(0xFF3D70A8),
           onTap: () {
             Navigator.of(context).push(
@@ -493,9 +882,27 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         _analysisCard(
+          key: _animalProfileTutorialKey,
+          icon: Icons.pets_rounded,
+          title: _text('Animal Profile', 'पशु प्रोफाइल'),
+          subtitle: _text('Animal, breed and goal', 'पशु, नस्ल और लक्ष्य'),
+          color: const Color(0xFF8063A6),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AnimalProfileScreen(isHindi: _isHindi),
+              ),
+            );
+          },
+        ),
+        _analysisCard(
+          key: _storageTutorialKey,
           icon: Icons.warehouse_rounded,
           title: _text('Storage Monitor', 'भंडारण निगरानी'),
-          subtitle: _text('Spoilage screening', 'खराब होने की जाँच'),
+          subtitle: _text(
+            'Storage-condition screening',
+            'भंडारण स्थिति की जाँच',
+          ),
           color: const Color(0xFF9A6815),
           onTap: () {
             Navigator.of(context).push(
@@ -506,10 +913,11 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         _analysisCard(
-          icon: Icons.auto_awesome_rounded,
+          key: _completeTestTutorialKey,
+          icon: Icons.assignment_turned_in_rounded,
           title: _text('Complete Test', 'संपूर्ण जाँच'),
-          subtitle: _text('Combined result', 'संयुक्त परिणाम'),
-          color: const Color(0xFF8063A6),
+          subtitle: _text('Review combined evidence', 'संयुक्त परिणाम देखें'),
+          color: const Color(0xFFD17B3F),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -526,6 +934,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _analysisCard({
+    Key? key,
     required IconData icon,
     required String title,
     required String subtitle,
@@ -533,6 +942,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
+      key: key,
       color: Colors.white,
       borderRadius: BorderRadius.circular(19),
       child: InkWell(
@@ -617,6 +1027,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBottomNavigation() {
     return NavigationBar(
+      key: _navigationTutorialKey,
       selectedIndex: 0,
       onDestinationSelected: (index) async {
         if (index == 1) {
@@ -656,6 +1067,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           await _loadDemoMode();
+          await _scheduleFirstTutorial();
         }
       },
       backgroundColor: Colors.white,
@@ -680,5 +1092,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _wakeRestartTimer?.cancel();
+    _wakeSpeech.stop();
+    _homeScrollController.dispose();
+    super.dispose();
   }
 }

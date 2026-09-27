@@ -5,6 +5,8 @@ import '../../core/models/feed_recommendation.dart';
 import '../../core/models/feed_test_result.dart';
 import '../../core/services/offline_recommendation_service.dart';
 import '../../core/storage/test_history_storage.dart';
+import '../../core/services/ai_error_handler.dart';
+import '../../core/services/feed_recommendation_ai_service.dart';
 
 class AdviceScreen extends StatefulWidget {
   const AdviceScreen({required this.isHindi, super.key});
@@ -20,6 +22,11 @@ class _AdviceScreenState extends State<AdviceScreen> {
   final TestHistoryStorage _historyStorage = TestHistoryStorage();
   final OfflineRecommendationService _recommendationService =
       const OfflineRecommendationService();
+      final FeedRecommendationAiService _aiRecommendationService =
+    FeedRecommendationAiService();
+
+FeedTestResult? _latestCompleteTest;
+bool _isEnhancingWithAi = false;
 
   FeedRecommendation? _personalizedRecommendation;
   bool _isLoadingRecommendation = true;
@@ -53,11 +60,13 @@ class _AdviceScreenState extends State<AdviceScreen> {
     if (!mounted) return;
 
     setState(() {
-      _personalizedRecommendation = latestCompleteTest == null
-          ? null
-          : _recommendationService.generate(latestCompleteTest);
-      _isLoadingRecommendation = false;
-    });
+  _latestCompleteTest = latestCompleteTest;
+  _personalizedRecommendation = latestCompleteTest == null
+      ? null
+      : _recommendationService.generate(latestCompleteTest);
+  _isLoadingRecommendation = false;
+  _isEnhancingWithAi = false;
+});
   }
 
   List<_AdviceItem> get _adviceItems {
@@ -197,6 +206,63 @@ class _AdviceScreenState extends State<AdviceScreen> {
       ),
     ];
   }
+  Future<void> _enhanceRecommendationWithAi() async {
+  final testResult = _latestCompleteTest;
+  final baseline = _personalizedRecommendation;
+
+  if (testResult == null || baseline == null || _isEnhancingWithAi) {
+    return;
+  }
+
+  setState(() {
+    _isEnhancingWithAi = true;
+  });
+
+  try {
+    final enhanced = await _aiRecommendationService.enhance(
+      result: testResult,
+      baseline: baseline,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _personalizedRecommendation = enhanced;
+      _isEnhancingWithAi = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _text(
+            'AI-enhanced guidance is ready.',
+            'AI द्वारा बेहतर मार्गदर्शन तैयार है।',
+          ),
+        ),
+        backgroundColor: ParakhColors.forestGreen,
+      ),
+    );
+  } catch (error) {
+    debugPrint('Recommendation AI failed: $error');
+
+    final failure = AiFailure.fromError(error);
+
+    if (!mounted) return;
+
+    setState(() {
+      _isEnhancingWithAi = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failure.localizedMessage(isHindi: widget.isHindi),
+        ),
+        backgroundColor: const Color(0xFFB75B4A),
+      ),
+    );
+  }
+}
 
   List<_AdviceItem> get _filteredItems {
     if (_selectedCategory == 'All') {
@@ -513,20 +579,28 @@ class _AdviceScreenState extends State<AdviceScreen> {
           ],
           const SizedBox(height: 10),
           Text(
-            _text(
-              'Source: Offline rules • Not laboratory validated',
-              'स्रोत: ऑफलाइन नियम • प्रयोगशाला द्वारा सत्यापित नहीं',
-            ),
-            style: const TextStyle(
-              color: Color(0xFF7A847D),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+  recommendation.recommendationSource == 'firebase-ai-logic'
+      ? _text(
+          'Source: Firebase AI + offline safety rules • Not laboratory validated',
+          'स्रोत: Firebase AI + ऑफलाइन सुरक्षा नियम • प्रयोगशाला द्वारा सत्यापित नहीं',
+        )
+      : _text(
+          'Source: Offline rules • Not laboratory validated',
+          'स्रोत: ऑफलाइन नियम • प्रयोगशाला द्वारा सत्यापित नहीं',
+        ),
+  style: const TextStyle(
+    color: Color(0xFF7A847D),
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+  ),
+),
+            
         ],
       ),
     );
   }
+
+  
 
   Widget _buildCategorySelector() {
     const categories = ['All', 'Nutrition', 'pH', 'Contamination', 'Storage'];

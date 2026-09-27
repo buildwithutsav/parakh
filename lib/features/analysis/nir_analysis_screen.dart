@@ -1,15 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/device_reading.dart';
-import '../../core/services/device_data_service.dart';
+import '../../core/services/parakh_bluetooth_service.dart';
 import '../../core/models/calibration_record.dart';
 import '../../core/storage/calibration_storage.dart';
 import '../../core/models/feed_reference_profile.dart';
 import '../../core/theme/parakh_colors.dart';
 import '../../core/storage/latest_analysis_storage.dart';
+import '../feed_identification/feed_identification_screen.dart';
+import '../../core/services/parakh_pls_predictor.dart';
+import '../animal_profile/animal_profile_screen.dart';
 
 class NirAnalysisScreen extends StatefulWidget {
   const NirAnalysisScreen({
@@ -27,14 +32,25 @@ class NirAnalysisScreen extends StatefulWidget {
 
 class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   final TextEditingController _sampleIdController = TextEditingController();
-  final DeviceDataService _deviceDataService = DeviceDataService();
+  final ParakhBluetoothService _bluetoothService =
+      ParakhBluetoothService.instance;
+  late final Future<ParakhPlsPredictor> _plsPredictorFuture =
+      ParakhPlsPredictor.load();
   final CalibrationStorage _calibrationStorage = CalibrationStorage();
   final FlutterTts _flutterTts = FlutterTts();
   final LatestAnalysisStorage _latestAnalysisStorage = LatestAnalysisStorage();
-  String _selectedFeed = 'Maize Silage';
+  String _selectedFeed = 'Concentrate Feed';
   bool _isScanning = false;
   bool _showResult = false;
+  bool _visualScreeningCompleted = false;
+
+  bool _hasAnimalProfile = false;
+
+  bool _cameraScreeningSkipped = false;
   DeviceReading? _reading;
+  double? _spectralReferenceMatch;
+  bool _plsBoundaryReached = false;
+
   String _animalType = 'cow';
   String _animalBreed = 'Not sure';
   String _animalStage = 'lactating';
@@ -50,11 +66,38 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
   void initState() {
     super.initState();
     _configureVoice();
-    _loadAnimalProfile();
+    _initialiseScan();
+  }
+
+  Future<void> _initialiseScan() async {
+    await _loadAnimalProfile();
+    await _loadNextSampleId();
+  }
+
+  Future<void> _loadNextSampleId() async {
+    final preferences = await SharedPreferences.getInstance();
+    final nextNumber = preferences.getInt('nextNirSampleNumber') ?? 1;
+
+    if (!mounted) return;
+
+    _sampleIdController.text = nextNumber.toString().padLeft(3, '0');
+  }
+
+  Future<void> _advanceSampleId() async {
+    final preferences = await SharedPreferences.getInstance();
+    final currentNumber = preferences.getInt('nextNirSampleNumber') ?? 1;
+    final nextNumber = currentNumber + 1;
+
+    await preferences.setInt('nextNirSampleNumber', nextNumber);
+
+    if (!mounted) return;
+
+    _sampleIdController.text = nextNumber.toString().padLeft(3, '0');
   }
 
   Future<void> _loadAnimalProfile() async {
     final preferences = await SharedPreferences.getInstance();
+
     final identifiedFeed = preferences.getString('identifiedFeedType');
     final animalType = preferences.getString('animalType') ?? 'cow';
     final animalBreed = preferences.getString('animalBreed') ?? 'Not sure';
@@ -65,12 +108,21 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     final animalWeight = double.tryParse(
       preferences.getString('animalWeight') ?? '',
     );
+
     final dailyMilkYield = double.tryParse(
       preferences.getString('dailyMilkYield') ?? '',
     );
+
     final milkFatPercent = double.tryParse(
       preferences.getString('milkFatPercent') ?? '',
     );
+
+    final hasSavedProfile =
+        preferences.getBool('animalProfileCompleted') ??
+        (animalBreed.trim().isNotEmpty &&
+            animalBreed != 'Not sure' &&
+            animalWeight != null &&
+            animalWeight > 0);
 
     if (!mounted) return;
 
@@ -82,6 +134,8 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       _animalWeight = animalWeight;
       _dailyMilkYield = dailyMilkYield;
       _milkFatPercent = milkFatPercent;
+      _hasAnimalProfile = hasSavedProfile;
+
       if (identifiedFeed != null &&
           FeedReferenceProfile.forFeed(identifiedFeed) != null) {
         _selectedFeed = identifiedFeed;
@@ -103,9 +157,119 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     await _flutterTts.speak(_text(english, hindi));
   }
 
+  Future<bool> _openAnimalProfile() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => AnimalProfileScreen(isHindi: widget.isHindi),
+      ),
+    );
+
+    if (!mounted || saved != true) {
+      return false;
+    }
+
+    await _loadAnimalProfile();
+
+    if (!mounted) return false;
+
+    return _hasAnimalProfile;
+  }
+
+  Future<bool> _completeVisualScreening() async {
+    final identifiedFeed = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => FeedIdentificationScreen(isHindi: widget.isHindi),
+      ),
+    );
+
+    if (!mounted || identifiedFeed == null) {
+      return false;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString('identifiedFeedType', identifiedFeed);
+
+    if (!mounted) return false;
+
+    setState(() {
+      _selectedFeed = identifiedFeed;
+      _visualScreeningCompleted = true;
+      _cameraScreeningSkipped = false;
+    });
+
+    return true;
+  }
+
+  void _skipCameraScreening() {
+    setState(() {
+      _cameraScreeningSkipped = true;
+      _visualScreeningCompleted = false;
+    });
+  }
+
   Future<void> _startScan() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final focusScope = FocusScope.of(context);
+    if (!_hasAnimalProfile) {
+      final profileSaved = await _openAnimalProfile();
+
+      if (!mounted) return;
+
+      if (!profileSaved) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              _text(
+                'Please save the animal profile before starting the scan.',
+                'स्कैन शुरू करने से पहले पशु प्रोफाइल सहेजें।',
+              ),
+            ),
+            backgroundColor: const Color(0xFF9A6815),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (!_visualScreeningCompleted && !_cameraScreeningSkipped) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'Complete camera screening or tap Skip.',
+              'कैमरा स्क्रीनिंग पूरी करें या छोड़ें दबाएँ।',
+            ),
+          ),
+          backgroundColor: const Color(0xFF9A6815),
+        ),
+      );
+      return;
+    }
+    /*if (!_visualScreeningCompleted) {
+      final completed = await _completeVisualScreening();
+
+      if (!mounted) return;
+
+      if (!completed) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              _text(
+                'Complete the camera screening before the spectral scan.',
+                'स्पेक्ट्रल स्कैन से पहले कैमरा स्क्रीनिंग पूरी करें।',
+              ),
+            ),
+            backgroundColor: const Color(0xFF9A6815),
+          ),
+        );
+        return;
+      }
+    }*/
+
+    if (!mounted) return;
+
     if (!widget.isDeviceConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             _text(
@@ -119,7 +283,7 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       return;
     }
     if (FeedReferenceProfile.forFeed(_selectedFeed) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             _text(
@@ -132,52 +296,129 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       );
       return;
     }
-    FocusScope.of(context).unfocus();
+    focusScope.unfocus();
 
     setState(() {
       _isScanning = true;
       _showResult = false;
       _reading = null;
+      _spectralReferenceMatch = null;
+      _plsBoundaryReached = false;
     });
     await HapticFeedback.heavyImpact();
     final enteredSampleId = _sampleIdController.text.trim();
 
-    final reading = await _deviceDataService.generateDemoReading(
-      sampleId: enteredSampleId.isEmpty ? 'S001' : enteredSampleId,
-      feedType: _selectedFeed,
-    );
-    final calibrationRecord = CalibrationRecord.pending(
-      id: '${reading.sampleId}-${reading.receivedAt.microsecondsSinceEpoch}',
-      reading: reading,
-      calibrationVersion: 'prototype-v1',
-    );
+    final sampleId = enteredSampleId.isEmpty
+        ? (DateTime.now().millisecondsSinceEpoch % 100000).toString().padLeft(
+            5,
+            '0',
+          )
+        : enteredSampleId;
 
     try {
-      await _calibrationStorage.saveRecord(calibrationRecord);
-    } catch (_) {
-      // Calibration logging must not prevent the farmer from viewing the result.
-    }
-    await _latestAnalysisStorage.saveNirReading(reading);
-    if (!mounted) return;
+      if (!_bluetoothService.isConnected) {
+        throw StateError('PARAKH-01 Bluetooth connection was lost.');
+      }
 
-    setState(() {
-      _reading = reading;
-      _isScanning = false;
-      _showResult = true;
-    });
+      // Start listening before sending the command so a fast response is not lost.
+      final readingFuture = _bluetoothService.readings.firstWhere(
+        (reading) => reading.sampleId == sampleId && reading.isComplete,
+      );
+
+      await _bluetoothService.startScan(
+        sampleId: sampleId,
+        feedType: _selectedFeed,
+      );
+
+      final reading = await readingFuture.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          throw TimeoutException(
+            'The device did not return a scan within 20 seconds.',
+          );
+        },
+      );
+      if (!reading.hasSpectralData) {
+        throw StateError(
+          'The device response did not contain spectral channels.',
+        );
+      }
+
+      final predictor = await _plsPredictorFuture;
+
+      final prediction = predictor.predict(
+        spectralChannels: reading.spectralChannels,
+      );
+      debugPrint('PARAKH RAW CHANNELS: ${reading.spectralChannels}');
+      debugPrint(
+        'PARAKH PLS: '
+        'protein=${prediction.protein}, '
+        'fat=${prediction.fat}, '
+        'fibre=${prediction.fibre}',
+      );
+      final predictedReading = reading.withNutrientPrediction(
+        protein: prediction.protein,
+        fiber: prediction.fibre,
+        fat: prediction.fat,
+        calibrationVersion: 'pls-feed-mash-v0.1',
+      );
+
+      final calibrationRecord = CalibrationRecord.pending(
+        id: '${predictedReading.sampleId}-${predictedReading.receivedAt.microsecondsSinceEpoch}',
+        reading: predictedReading,
+        calibrationVersion: predictedReading.calibrationVersion,
+      );
+
+      try {
+        await _calibrationStorage.saveRecord(calibrationRecord);
+      } catch (_) {
+        // Calibration logging must not prevent the raw result from being viewed.
+      }
+
+      await _latestAnalysisStorage.saveNirReading(predictedReading);
+      await _advanceSampleId();
+
+      if (!mounted) return;
+
+      setState(() {
+        _reading = predictedReading;
+        _spectralReferenceMatch = prediction.referenceMatch;
+        _plsBoundaryReached = prediction.reachedModelBoundary;
+
+        _isScanning = false;
+        _showResult = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isScanning = false;
+        _showResult = false;
+        _reading = null;
+      });
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_text('Scan failed: $error', 'स्कैन विफल हुआ: $error')),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
   }
 
   void _resetScan() {
     setState(() {
       _showResult = false;
       _reading = null;
+      _visualScreeningCompleted = false;
+      _cameraScreeningSkipped = false;
     });
   }
 
   @override
   void dispose() {
     _sampleIdController.dispose();
-    _deviceDataService.dispose();
+
     _flutterTts.stop();
     super.dispose();
   }
@@ -220,7 +461,11 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                 _buildDeviceStatus(),
                 const SizedBox(height: 18),
                 if (!_showResult) ...[
+                  _buildAnimalProfileSetupCard(),
+                  const SizedBox(height: 18),
                   _buildSampleForm(),
+                  const SizedBox(height: 18),
+                  _buildVisualScreeningCard(),
                   const SizedBox(height: 18),
                   _buildPreparationCard(),
                   const SizedBox(height: 22),
@@ -302,8 +547,12 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           TextField(
             controller: _sampleIdController,
             decoration: InputDecoration(
-              labelText: _text('Sample ID (optional)', 'नमूना आईडी (वैकल्पिक)'),
-              hintText: 'Example: FEED-001',
+              labelText: _text('Sample ID', 'नमूना आईडी'),
+              hintText: '001',
+              helperText: _text(
+                'Generated automatically. You can change it.',
+                'स्वचालित रूप से बनाया गया है। आप इसे बदल सकते हैं।',
+              ),
               prefixIcon: const Icon(Icons.qr_code_rounded),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -351,6 +600,269 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
                 _selectedFeed = value;
               });
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimalProfileSetupCard() {
+    final completed = _hasAnimalProfile;
+
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: completed ? const Color(0xFFE3F1E6) : const Color(0xFFFFF7DF),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: completed ? const Color(0xFFC5DFC9) : const Color(0xFFEAD8A4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            completed ? Icons.check_circle_rounded : Icons.pets_rounded,
+            color: completed
+                ? const Color(0xFF32834C)
+                : const Color(0xFF9A6815),
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text('Animal profile', 'पशु प्रोफाइल'),
+                  style: const TextStyle(
+                    color: Color(0xFF26372D),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  completed
+                      ? _text(
+                          '$_animalType • $_animalBreed • ${_productionGoalLabel()}',
+                          '$_animalType • $_animalBreed • ${_productionGoalLabel()}',
+                        )
+                      : _text(
+                          'Required for goal-based guidance',
+                          'लक्ष्य आधारित मार्गदर्शन के लिए आवश्यक',
+                        ),
+                  style: const TextStyle(
+                    color: Color(0xFF667169),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _isScanning ? null : _openAnimalProfile,
+            child: Text(
+              completed ? _text('Edit', 'बदलें') : _text('Add', 'जोड़ें'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVisualScreeningCard() {
+    final completed = _visualScreeningCompleted;
+    final skipped = _cameraScreeningSkipped;
+
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: completed
+            ? const Color(0xFFE3F1E6)
+            : skipped
+            ? const Color(0xFFF0F2EF)
+            : const Color(0xFFFFF7DF),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: completed
+              ? const Color(0xFFC5DFC9)
+              : skipped
+              ? const Color(0xFFD9DFD8)
+              : const Color(0xFFEAD8A4),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                completed
+                    ? Icons.check_circle_rounded
+                    : skipped
+                    ? Icons.fast_forward_rounded
+                    : Icons.camera_alt_rounded,
+                color: completed
+                    ? const Color(0xFF32834C)
+                    : skipped
+                    ? const Color(0xFF667169)
+                    : const Color(0xFF9A6815),
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text('Camera feed screening', 'कैमरा चारा स्क्रीनिंग'),
+                      style: const TextStyle(
+                        color: Color(0xFF26372D),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      completed
+                          ? _text(
+                              'Completed • $_selectedFeed',
+                              'पूर्ण • $_selectedFeed',
+                            )
+                          : skipped
+                          ? _text(
+                              'Skipped for this sample',
+                              'इस नमूने के लिए छोड़ा गया',
+                            )
+                          : _text(
+                              'Optional visual impurity screening',
+                              'वैकल्पिक दृश्य अशुद्धता स्क्रीनिंग',
+                            ),
+                      style: const TextStyle(
+                        color: Color(0xFF667169),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isScanning ? null : _completeVisualScreening,
+                  icon: const Icon(Icons.camera_alt_rounded),
+                  label: Text(
+                    completed
+                        ? _text('Retake', 'दोबारा लें')
+                        : _text('Start camera', 'कैमरा शुरू करें'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              TextButton(
+                onPressed: _isScanning ? null : _skipCameraScreening,
+                child: Text(_text('Skip', 'छोड़ें')),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlsModelStatusCard() {
+    final match = _spectralReferenceMatch;
+
+    if (match == null) {
+      return const SizedBox.shrink();
+    }
+
+    final Color accent;
+    final String matchLabel;
+
+    if (match >= 80) {
+      accent = const Color(0xFF2F7D4A);
+      matchLabel = _text(
+        'Close to trained references',
+        'प्रशिक्षित संदर्भों के करीब',
+      );
+    } else if (match >= 50) {
+      accent = const Color(0xFF9A6815);
+      matchLabel = _text('Moderate reference match', 'मध्यम संदर्भ मिलान');
+    } else {
+      accent = const Color(0xFFB45545);
+      matchLabel = _text(
+        'Outside current reference range',
+        'वर्तमान संदर्भ सीमा से बाहर',
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E8DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.multiline_chart_rounded, color: accent),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  _text('Spectral reference match', 'स्पेक्ट्रल संदर्भ मिलान'),
+                  style: const TextStyle(
+                    color: Color(0xFF26372D),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                '${match.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            matchLabel,
+            style: TextStyle(color: accent, fontWeight: FontWeight.w700),
+          ),
+          if (_plsBoundaryReached) ...[
+            const SizedBox(height: 9),
+            Text(
+              _text(
+                'One or more nutrient estimates reached the current model boundary.',
+                'एक या अधिक पोषक अनुमान वर्तमान मॉडल सीमा तक पहुँच गए।',
+              ),
+              style: const TextStyle(
+                color: Color(0xFF9A6815),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            _text(
+              'Prototype comparison with manufacturer-labelled feed references. This is not a laboratory accuracy score.',
+              'निर्माता-लेबल वाले चारा संदर्भों से प्रोटोटाइप तुलना। यह प्रयोगशाला सटीकता स्कोर नहीं है।',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF7A847D),
+              fontSize: 11,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -512,6 +1024,16 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
       return const [];
     }
 
+    final isPlsFeedMash = reading.calibrationVersion == 'pls-feed-mash-v0.1';
+
+    if (isPlsFeedMash) {
+      return [
+        profile.protein.riskLevel(reading.protein),
+        profile.fiber.riskLevel(reading.fiber),
+        profile.fat.riskLevel(reading.fat),
+      ];
+    }
+
     return [
       profile.moisture.riskLevel(reading.moisture),
       profile.protein.riskLevel(reading.protein),
@@ -533,13 +1055,36 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     final adjustments = <(String, int)>[];
     final levels = _readingRiskLevels(reading);
 
-    final metricLabels = [
-      _text('Moisture outside expected range', 'नमी अपेक्षित सीमा से बाहर'),
-      _text('Protein outside expected range', 'प्रोटीन अपेक्षित सीमा से बाहर'),
-      _text('Fibre outside expected range', 'फाइबर अपेक्षित सीमा से बाहर'),
-      _text('Fat outside expected range', 'वसा अपेक्षित सीमा से बाहर'),
-      _text('Ash outside expected range', 'राख अपेक्षित सीमा से बाहर'),
-    ];
+    final isPlsFeedMash = reading.calibrationVersion == 'pls-feed-mash-v0.1';
+
+    final metricLabels = isPlsFeedMash
+        ? [
+            _text(
+              'Protein outside expected range',
+              'प्रोटीन अपेक्षित सीमा से बाहर',
+            ),
+            _text(
+              'Fibre outside expected range',
+              'फाइबर अपेक्षित सीमा से बाहर',
+            ),
+            _text('Fat outside expected range', 'वसा अपेक्षित सीमा से बाहर'),
+          ]
+        : [
+            _text(
+              'Moisture outside expected range',
+              'नमी अपेक्षित सीमा से बाहर',
+            ),
+            _text(
+              'Protein outside expected range',
+              'प्रोटीन अपेक्षित सीमा से बाहर',
+            ),
+            _text(
+              'Fibre outside expected range',
+              'फाइबर अपेक्षित सीमा से बाहर',
+            ),
+            _text('Fat outside expected range', 'वसा अपेक्षित सीमा से बाहर'),
+            _text('Ash outside expected range', 'राख अपेक्षित सीमा से बाहर'),
+          ];
 
     for (var index = 0; index < levels.length; index++) {
       final level = levels[index];
@@ -875,7 +1420,10 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     if (reading == null) {
       return const SizedBox.shrink();
     }
-
+    final isRawHardwareScan =
+        reading.hasSpectralData &&
+        !reading.isSimulated &&
+        reading.calibrationVersion.toLowerCase() == 'unvalidated';
     final risk = _overallRisk(reading);
     final score = _goalSuitabilityScore(reading);
 
@@ -911,80 +1459,95 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     }
     return Column(
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: resultColors),
-            borderRadius: BorderRadius.circular(22),
+        if (isRawHardwareScan)
+          _buildRawScanHeader(reading)
+        else
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: resultColors),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              children: [
+                Icon(resultIcon, color: resultAccent, size: 45),
+                const SizedBox(height: 10),
+                Text(
+                  _text('Analysis complete', 'विश्लेषण पूरा हुआ'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _selectedFeed,
+                  style: const TextStyle(
+                    color: Color(0xFFDDEBE1),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 17),
+                Text(
+                  '$score/100',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 35,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _text('Goal Suitability Index', 'लक्ष्य उपयुक्तता सूचकांक'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _productionGoalLabel(),
+                  style: TextStyle(
+                    color: resultAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  resultLabel,
+                  style: TextStyle(
+                    color: resultAccent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Column(
-            children: [
-              Icon(resultIcon, color: resultAccent, size: 45),
-              const SizedBox(height: 10),
-              Text(
-                _text('Analysis complete', 'विश्लेषण पूरा हुआ'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _selectedFeed,
-                style: const TextStyle(color: Color(0xFFDDEBE1), fontSize: 13),
-              ),
-              const SizedBox(height: 17),
-              Text(
-                '$score/100',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 35,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                _text('Goal Suitability Index', 'लक्ष्य उपयुक्तता सूचकांक'),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                _productionGoalLabel(),
-                style: TextStyle(
-                  color: resultAccent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                resultLabel,
-                style: TextStyle(
-                  color: resultAccent,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 18),
-        _buildAnimalContextCard(),
-        const SizedBox(height: 14),
-        _buildScreeningNotice(),
-        const SizedBox(height: 14),
         _buildScanInformationCard(reading),
         const SizedBox(height: 14),
-        _buildScoreExplanation(reading),
-        const SizedBox(height: 18),
-        _buildMetricsCard(),
-        const SizedBox(height: 18),
-        _buildRecommendationCard(),
+        if (reading.calibrationVersion == 'pls-feed-mash-v0.1')
+          _buildPlsModelStatusCard(),
+        const SizedBox(height: 14),
+        if (isRawHardwareScan) ...[
+          _buildRawCalibrationNotice(),
+          const SizedBox(height: 14),
+          _buildRawSpectralCard(reading),
+        ] else ...[
+          _buildAnimalContextCard(),
+          const SizedBox(height: 14),
+          _buildScreeningNotice(),
+          const SizedBox(height: 14),
+          _buildScoreExplanation(reading),
+          const SizedBox(height: 18),
+          _buildMetricsCard(),
+          const SizedBox(height: 18),
+          _buildRecommendationCard(),
+        ],
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
@@ -998,6 +1561,273 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRawScanHeader(DeviceReading reading) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF174D35), Color(0xFF2F7650)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.multiline_chart_rounded,
+            color: Color(0xFFBCE4C4),
+            size: 45,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _text(
+              'Raw spectral scan complete',
+              'कच्चा स्पेक्ट्रल स्कैन पूरा हुआ',
+            ),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            reading.feedType,
+            style: const TextStyle(color: Color(0xFFDDEBE1), fontSize: 13),
+          ),
+          const SizedBox(height: 17),
+          Text(
+            '${reading.spectralChannels.length}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 35,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            _text('Spectral channels received', 'स्पेक्ट्रल चैनल प्राप्त हुए'),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _text(
+              'Hardware data captured successfully',
+              'हार्डवेयर डेटा सफलतापूर्वक प्राप्त हुआ',
+            ),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFBCE4C4),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRawCalibrationNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E4),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFE4C87A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.science_outlined,
+            color: Color(0xFF9A6815),
+            size: 24,
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text('Calibration required', 'कैलिब्रेशन आवश्यक है'),
+                  style: const TextStyle(
+                    color: Color(0xFF795315),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _text(
+                    'These are raw AS7343 spectral readings. Moisture, protein, fibre, fat, ash and quality scores cannot be calculated until a model is trained and validated using laboratory reference results.',
+                    'ये कच्ची AS7343 स्पेक्ट्रल रीडिंग हैं। प्रयोगशाला संदर्भ परिणामों से मॉडल को प्रशिक्षित और सत्यापित किए बिना नमी, प्रोटीन, फाइबर, वसा, राख और गुणवत्ता स्कोर की गणना नहीं की जा सकती।',
+                  ),
+                  style: const TextStyle(
+                    color: Color(0xFF795315),
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRawSpectralCard(DeviceReading reading) {
+    const preferredOrder = [
+      'F1',
+      'F2',
+      'FZ',
+      'F3',
+      'F4',
+      'F5',
+      'FY',
+      'FXL',
+      'F6',
+      'F7',
+      'F8',
+      'NIR',
+      'Clear',
+    ];
+
+    final orderedChannels = <MapEntry<String, double>>[];
+
+    for (final channel in preferredOrder) {
+      final value = reading.spectralChannels[channel];
+
+      if (value != null) {
+        orderedChannels.add(MapEntry(channel, value));
+      }
+    }
+
+    for (final entry in reading.spectralChannels.entries) {
+      if (!preferredOrder.contains(entry.key)) {
+        orderedChannels.add(entry);
+      }
+    }
+
+    String formatValue(double value) {
+      if (value == value.roundToDouble()) {
+        return value.toInt().toString();
+      }
+
+      return value.toStringAsFixed(2);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: const Color(0xFFE0E8DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.multiline_chart_rounded,
+                color: ParakhColors.forestGreen,
+              ),
+              const SizedBox(width: 9),
+              Text(
+                _text('Raw spectral readings', 'कच्ची स्पेक्ट्रल रीडिंग'),
+                style: const TextStyle(
+                  color: Color(0xFF26372D),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            _text(
+              'Uncalibrated sensor counts from the AS7343',
+              'AS7343 से प्राप्त बिना कैलिब्रेशन वाले सेंसर काउंट',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF7A847D),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Divider(height: 25),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: orderedChannels.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 2.35,
+            ),
+            itemBuilder: (context, index) {
+              final entry = orderedChannels[index];
+
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F7F2),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: const Color(0xFFDCE9DE)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(
+                          color: Color(0xFF4C5A50),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      formatValue(entry.value),
+                      style: const TextStyle(
+                        color: Color(0xFF174D35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 13),
+          Text(
+            _text(
+              'Compare readings only when distance, illumination, container, sample depth and sensor settings are kept constant.',
+              'रीडिंग की तुलना तभी करें जब दूरी, रोशनी, कंटेनर, नमूने की गहराई और सेंसर सेटिंग समान रखी जाएँ।',
+            ),
+            style: const TextStyle(
+              color: Color(0xFF6F796F),
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1102,9 +1932,25 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
     return _text('Poor', 'खराब');
   }
 
+  double? _moistureSpectralIndex(DeviceReading reading) {
+    final nir = reading.spectralChannels['NIR']?.toDouble();
+    final clear = reading.spectralChannels['Clear']?.toDouble();
+
+    if (nir == null || clear == null || clear <= 0) {
+      return null;
+    }
+
+    return (nir / clear * 100).clamp(0.0, 100.0).toDouble();
+  }
+
   Widget _buildMetricsCard() {
     final reading = _reading;
     final profile = FeedReferenceProfile.forFeed(_selectedFeed);
+    final isPlsFeedMash = reading?.calibrationVersion == 'pls-feed-mash-v0.4';
+
+    final moistureIndex = reading == null
+        ? null
+        : _moistureSpectralIndex(reading);
 
     if (reading == null || profile == null) {
       return const SizedBox.shrink();
@@ -1138,34 +1984,59 @@ class _NirAnalysisScreenState extends State<NirAnalysisScreen> {
           ),
           const Divider(height: 25),
           _metricRow(
-            _text('Moisture', 'नमी'),
-            '${reading.moisture.toStringAsFixed(1)}%',
-            _metricStatus(value: reading.moisture, band: profile.moisture),
+            isPlsFeedMash
+                ? _text('Moisture spectral proxy', 'नमी स्पेक्ट्रल प्रॉक्सी')
+                : _text('Moisture', 'नमी'),
+            isPlsFeedMash
+                ? moistureIndex?.toStringAsFixed(2) ?? '—'
+                : '${reading.moisture.toStringAsFixed(1)}%',
+            isPlsFeedMash
+                ? _text('Review • Experimental', 'जाँच • प्रायोगिक')
+                : _metricStatus(
+                    value: reading.moisture,
+                    band: profile.moisture,
+                  ),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Crude protein', 'कच्चा प्रोटीन'),
-            '${reading.protein.toStringAsFixed(1)}%',
+            '${reading.protein.toStringAsFixed(2)}%',
             _metricStatus(value: reading.protein, band: profile.protein),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fibre', 'फाइबर'),
-            '${reading.fiber.toStringAsFixed(1)}%',
+            '${reading.fiber.toStringAsFixed(2)}%',
             _metricStatus(value: reading.fiber, band: profile.fiber),
           ),
           const Divider(height: 25),
           _metricRow(
             _text('Fat', 'वसा'),
-            '${reading.fat.toStringAsFixed(1)}%',
+            '${reading.fat.toStringAsFixed(2)}%',
             _metricStatus(value: reading.fat, band: profile.fat),
           ),
-          const Divider(height: 25),
           _metricRow(
             _text('Ash', 'राख'),
-            '${reading.ash.toStringAsFixed(1)}%',
-            _metricStatus(value: reading.ash, band: profile.ash),
+            isPlsFeedMash ? '—' : '${reading.ash.toStringAsFixed(1)}%',
+            isPlsFeedMash
+                ? _text('Review • Not estimated', 'जाँच • अनुमान उपलब्ध नहीं')
+                : _metricStatus(value: reading.ash, band: profile.ash),
           ),
+          if (isPlsFeedMash) ...[
+            const Divider(height: 25),
+            Text(
+              _text(
+                'Moisture proxy is calculated from the NIR/Clear spectral ratio. It is not a calibrated moisture percentage. Ash is not estimated. Neither value is included in scoring.',
+                'नमी प्रॉक्सी की गणना NIR/Clear स्पेक्ट्रल अनुपात से की जाती है। यह कैलिब्रेटेड नमी प्रतिशत नहीं है। राख का अनुमान उपलब्ध नहीं है। दोनों मान स्कोर में शामिल नहीं हैं।',
+              ),
+              style: const TextStyle(
+                color: Color(0xFF7A847D),
+                fontSize: 11,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ],
       ),
     );

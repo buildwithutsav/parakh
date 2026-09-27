@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/storage/test_history_storage.dart';
 import '../../core/theme/parakh_colors.dart';
 import '../calibration/calibration_screen.dart';
-import '../onboarding/onboarding_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -134,11 +133,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(_text('Replay tutorial?', 'ट्यूटोरियल दोबारा देखें?')),
+          title: Text(
+            _text(
+              'Replay interactive tutorial?',
+              'इंटरैक्टिव ट्यूटोरियल दोबारा देखें?',
+            ),
+          ),
           content: Text(
             _text(
-              'The introductory tutorial will start again.',
-              'परिचय ट्यूटोरियल फिर से शुरू होगा।',
+              'The Home and NIR highlighted tutorials will be shown again.',
+              'होम और NIR के हाइलाइट किए गए ट्यूटोरियल फिर से दिखाए जाएँगे।',
             ),
           ),
           actions: [
@@ -158,14 +162,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (shouldReplay != true) return;
 
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('tutorialCompleted', false);
+
+    await preferences.setBool('homeTutorialCompleted', false);
+    await preferences.setBool('nirTutorialCompleted', false);
 
     if (!mounted) return;
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const OnboardingScreen()),
-      (route) => false,
-    );
+    Navigator.of(context).pop(_isHindi);
   }
 
   @override
