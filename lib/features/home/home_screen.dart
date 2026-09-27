@@ -18,6 +18,8 @@ import '../settings/settings_screen.dart';
 import '../animal_profile/animal_profile_screen.dart';
 import '../storage_monitoring/storage_monitoring_screen.dart';
 import '../sakhi/sakhi_assistant_screen.dart';
+import '../../core/models/feed_test_result.dart';
+import '../../core/storage/test_history_storage.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
@@ -41,6 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _completeTestTutorialKey = GlobalKey();
   final GlobalKey _sakhiTutorialKey = GlobalKey();
   final GlobalKey _navigationTutorialKey = GlobalKey();
+  final TestHistoryStorage _testHistoryStorage = TestHistoryStorage();
+
+  List<FeedTestResult> _recentTests = [];
+  bool _isLoadingRecentTests = true;
 
   TutorialCoachMark? _tutorialCoachMark;
   final SpeechToText _wakeSpeech = SpeechToText();
@@ -58,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _isHindi = widget.isHindi;
     _loadDemoMode();
     _loadWakeMode();
+    _loadRecentTests();
     _scheduleFirstTutorial();
   }
 
@@ -271,6 +278,55 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _loadRecentTests() async {
+    final results = await _testHistoryStorage.getResults();
+
+    if (!mounted) return;
+
+    setState(() {
+      _recentTests = results.take(3).toList();
+      _isLoadingRecentTests = false;
+    });
+  }
+
+  Future<void> _openHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => HistoryScreen(isHindi: _isHindi)),
+    );
+
+    if (!mounted) return;
+    await _loadRecentTests();
+  }
+
+  String _formatRecentTestDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    final hour = date.hour == 0
+        ? 12
+        : date.hour > 12
+        ? date.hour - 12
+        : date.hour;
+
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+
+    return '${date.day} ${months[date.month - 1]}, '
+        '$hour:$minute $period';
+  }
+
   Future<void> _loadWakeMode() async {
     final preferences = await SharedPreferences.getInstance();
     final enabled = preferences.getBool('sakhiWakeModeEnabled') ?? false;
@@ -446,17 +502,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showHomeTutorial() {
     final targets = <TargetFocus>[
-      _tutorialTarget(
-        id: 'language',
-        key: _languageTutorialKey,
-        title: _text('Choose your language', 'अपनी भाषा चुनें'),
-        description: _text(
-          'Tap here anytime to switch between English and Hindi.',
-          'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
-        ),
-        align: ContentAlign.bottom,
-        showBack: false,
-      ),
+      _languageTutorialTarget(),
+
       _tutorialTarget(
         id: 'device',
         key: _deviceTutorialKey,
@@ -562,6 +609,63 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     _tutorialCoachMark!.show(context: context);
+  }
+
+  TargetFocus _languageTutorialTarget() {
+    final targetContext = _languageTutorialKey.currentContext;
+    final renderObject = targetContext?.findRenderObject();
+
+    if (renderObject is! RenderBox) {
+      return _tutorialTarget(
+        id: 'language',
+        key: _languageTutorialKey,
+        title: _text('Choose your language', 'अपनी भाषा चुनें'),
+        description: _text(
+          'Tap here anytime to switch between English and Hindi.',
+          'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
+        ),
+        align: ContentAlign.bottom,
+        showBack: false,
+      );
+    }
+
+    final measuredPosition = renderObject.localToGlobal(Offset.zero);
+    final measuredSize = renderObject.size;
+
+    const focusWidth = 48.0;
+    final focusHeight = measuredSize.height > 46 ? 46.0 : measuredSize.height;
+
+    final focusPosition = Offset(
+      measuredPosition.dx + measuredSize.width - focusWidth,
+      measuredPosition.dy + ((measuredSize.height - focusHeight) / 2),
+    );
+
+    return TargetFocus(
+      identify: 'language',
+      targetPosition: TargetPosition(
+        Size(focusWidth, focusHeight),
+        focusPosition,
+      ),
+      shape: ShapeLightFocus.RRect,
+      radius: 12,
+      paddingFocus: 2,
+      enableOverlayTab: false,
+      enableTargetTab: false,
+      contents: [
+        TargetContent(
+          align: ContentAlign.bottom,
+          child: _tutorialContent(
+            title: _text('Choose your language', 'अपनी भाषा चुनें'),
+            description: _text(
+              'Tap here anytime to switch between English and Hindi.',
+              'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
+            ),
+            showBack: false,
+            isLast: false,
+          ),
+        ),
+      ],
+    );
   }
 
   TargetFocus _tutorialTarget({
@@ -918,8 +1022,8 @@ class _HomeScreenState extends State<HomeScreen> {
           title: _text('Complete Test', 'संपूर्ण जाँच'),
           subtitle: _text('Review combined evidence', 'संयुक्त परिणाम देखें'),
           color: const Color(0xFFD17B3F),
-          onTap: () {
-            Navigator.of(context).push(
+          onTap: () async {
+            await Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => CompleteTestScreen(
                   isHindi: _isHindi,
@@ -927,6 +1031,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             );
+
+            if (!mounted) return;
+            await _loadRecentTests();
           },
         ),
       ],
@@ -1002,25 +1109,144 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _buildSectionTitle(_text('Recent tests', 'हाल की जाँच')),
               ),
-              Text(
-                _text('View all', 'सभी देखें'),
-                style: const TextStyle(
-                  color: ParakhColors.forestGreen,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+              TextButton(
+                onPressed: _openHistory,
+                child: Text(
+                  _text('View all', 'सभी देखें'),
+                  style: const TextStyle(
+                    color: ParakhColors.forestGreen,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          const Icon(Icons.history_rounded, color: Color(0xFFAAB4AA), size: 35),
-          const SizedBox(height: 8),
-          Text(
-            _text('No tests recorded yet', 'अभी कोई जाँच दर्ज नहीं है'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF747E76), fontSize: 13),
-          ),
+          const SizedBox(height: 12),
+          if (_isLoadingRecentTests)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 22),
+              child: CircularProgressIndicator(
+                color: ParakhColors.forestGreen,
+                strokeWidth: 2.5,
+              ),
+            )
+          else if (_recentTests.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.history_rounded,
+                    color: Color(0xFFAAB4AA),
+                    size: 35,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _text('No tests recorded yet', 'अभी कोई जाँच दर्ज नहीं है'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF747E76),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...List.generate(_recentTests.length, (index) {
+              final result = _recentTests[index];
+
+              return Column(
+                children: [
+                  if (index > 0) const Divider(height: 22),
+                  _buildRecentTestRow(result),
+                ],
+              );
+            }),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRecentTestRow(FeedTestResult result) {
+    final isLowRisk = result.riskLevel.toUpperCase() == 'LOW';
+
+    final accentColor = isLowRisk
+        ? const Color(0xFF32834C)
+        : const Color(0xFFB75B4A);
+
+    final accentBackground = isLowRisk
+        ? const Color(0xFFE3F1E6)
+        : const Color(0xFFFFECE7);
+
+    return InkWell(
+      onTap: _openHistory,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accentBackground,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${result.score}',
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.feedType,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF26342B),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    result.sampleId == 'Not provided'
+                        ? _formatRecentTestDate(result.createdAt)
+                        : '${result.sampleId} • '
+                              '${_formatRecentTestDate(result.createdAt)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF7B847D),
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${result.testType} • ${result.riskLevel} RISK',
+                    style: TextStyle(
+                      color: accentColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF9BA49D)),
+          ],
+        ),
       ),
     );
   }
@@ -1031,11 +1257,7 @@ class _HomeScreenState extends State<HomeScreen> {
       selectedIndex: 0,
       onDestinationSelected: (index) async {
         if (index == 1) {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => HistoryScreen(isHindi: _isHindi),
-            ),
-          );
+          await _openHistory();
           return;
         }
 
