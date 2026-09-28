@@ -9,7 +9,6 @@ import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../../core/theme/parakh_colors.dart';
 import '../device/device_connection_screen.dart';
 import '../analysis/nir_analysis_screen.dart';
-
 import '../ph_analysis/ph_analysis_screen.dart';
 import '../complete_test/complete_test_screen.dart';
 import '../history/history_screen.dart';
@@ -20,12 +19,11 @@ import '../storage_monitoring/storage_monitoring_screen.dart';
 import '../sakhi/sakhi_assistant_screen.dart';
 import '../../core/models/feed_test_result.dart';
 import '../../core/storage/test_history_storage.dart';
+import '../../core/services/parakh_bluetooth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.isHindi, super.key});
-
   final bool isHindi;
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -34,7 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
   late bool _isHindi;
   bool _isDeviceConnected = false;
   bool _isDemoMode = false;
-  final GlobalKey _languageTutorialKey = GlobalKey();
+  final ParakhBluetoothService _bluetoothService =
+      ParakhBluetoothService.instance;
+  StreamSubscription<bool>? _deviceConnectionSubscription;
+  final GlobalKey _headerControlsTutorialKey = GlobalKey();
   final GlobalKey _deviceTutorialKey = GlobalKey();
   final GlobalKey _nirTutorialKey = GlobalKey();
   final GlobalKey _phTutorialKey = GlobalKey();
@@ -44,23 +45,27 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _sakhiTutorialKey = GlobalKey();
   final GlobalKey _navigationTutorialKey = GlobalKey();
   final TestHistoryStorage _testHistoryStorage = TestHistoryStorage();
-
   List<FeedTestResult> _recentTests = [];
   bool _isLoadingRecentTests = true;
-
   TutorialCoachMark? _tutorialCoachMark;
   final SpeechToText _wakeSpeech = SpeechToText();
-
   Timer? _wakeRestartTimer;
-
   bool _wakeModeEnabled = false;
   bool _wakeSpeechAvailable = false;
   bool _isOpeningSakhi = false;
   final ScrollController _homeScrollController = ScrollController();
-
   @override
   void initState() {
     super.initState();
+    _isDeviceConnected = _bluetoothService.isConnected;
+    _deviceConnectionSubscription = _bluetoothService.connectionChanges.listen((
+      connected,
+    ) {
+      if (!mounted) return;
+      setState(() {
+        _isDeviceConnected = connected;
+      });
+    });
     _isHindi = widget.isHindi;
     _loadDemoMode();
     _loadWakeMode();
@@ -71,9 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadDemoMode() async {
     final preferences = await SharedPreferences.getInstance();
     final enabled = preferences.getBool('demoMode') ?? false;
-
     if (!mounted) return;
-
     setState(() {
       _isDemoMode = enabled;
     });
@@ -86,22 +89,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleLanguage() async {
     final newLanguage = !_isHindi;
     final preferences = await SharedPreferences.getInstance();
-
     await preferences.setString('language', newLanguage ? 'hi' : 'en');
-
     if (!mounted) return;
-
     setState(() {
       _isHindi = newLanguage;
     });
-
     if (_wakeModeEnabled) {
       _wakeRestartTimer?.cancel();
-
       if (_wakeSpeech.isListening) {
         await _wakeSpeech.stop();
       }
-
       if (mounted) {
         await _startWakeListening();
       }
@@ -110,27 +107,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openSakhi() async {
     if (_isOpeningSakhi) return;
-
     _isOpeningSakhi = true;
     _wakeRestartTimer?.cancel();
-
     if (_wakeSpeech.isListening) {
       await _wakeSpeech.stop();
     }
-
     if (!mounted) {
       _isOpeningSakhi = false;
       return;
     }
-
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SakhiAssistantScreen(isHindi: _isHindi),
       ),
     );
-
     _isOpeningSakhi = false;
-
     if (mounted && _wakeModeEnabled) {
       await _startWakeListening();
     }
@@ -151,7 +142,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildWelcomeCard(),
-
                 const SizedBox(height: 22),
                 _buildSectionTitle(_text('Device status', 'डिवाइस की स्थिति')),
                 const SizedBox(height: 12),
@@ -236,43 +226,50 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        IconButton(
-          tooltip: _wakeModeEnabled
-              ? _text('Disable Hey Sakhi', 'हे सखी बंद करें')
-              : _text('Enable Hey Sakhi', 'हे सखी चालू करें'),
-          onPressed: _toggleWakeMode,
-          icon: Icon(
-            _wakeModeEnabled
-                ? (_wakeSpeech.isListening
-                      ? Icons.mic_rounded
-                      : Icons.mic_none_rounded)
-                : Icons.mic_off_rounded,
-            color: _wakeModeEnabled && _wakeSpeechAvailable
-                ? ParakhColors.forestGreen
-                : const Color(0xFF7A847D),
-          ),
-        ),
-        const SizedBox(width: 4),
-
-        InkWell(
-          onTap: _toggleLanguage,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            key: _languageTutorialKey,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFDDE5DA)),
-            ),
-            child: Text(
-              _isHindi ? 'EN' : 'हिं',
-              style: const TextStyle(
-                color: ParakhColors.forestGreen,
-                fontWeight: FontWeight.w700,
+        Row(
+          key: _headerControlsTutorialKey,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: _wakeModeEnabled
+                  ? _text('Disable Hey Sakhi', 'हे सखी बंद करें')
+                  : _text('Enable Hey Sakhi', 'हे सखी चालू करें'),
+              onPressed: _toggleWakeMode,
+              icon: Icon(
+                _wakeModeEnabled
+                    ? (_wakeSpeech.isListening
+                          ? Icons.mic_rounded
+                          : Icons.mic_none_rounded)
+                    : Icons.mic_off_rounded,
+                color: _wakeModeEnabled && _wakeSpeechAvailable
+                    ? ParakhColors.forestGreen
+                    : const Color(0xFF7A847D),
               ),
             ),
-          ),
+            const SizedBox(width: 4),
+            InkWell(
+              onTap: _toggleLanguage,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFDDE5DA)),
+                ),
+                child: Text(
+                  _isHindi ? 'EN' : 'हिं',
+                  style: const TextStyle(
+                    color: ParakhColors.forestGreen,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -280,9 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadRecentTests() async {
     final results = await _testHistoryStorage.getResults();
-
     if (!mounted) return;
-
     setState(() {
       _recentTests = results.take(3).toList();
       _isLoadingRecentTests = false;
@@ -293,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => HistoryScreen(isHindi: _isHindi)),
     );
-
     if (!mounted) return;
     await _loadRecentTests();
   }
@@ -313,16 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
       'Nov',
       'Dec',
     ];
-
     final hour = date.hour == 0
         ? 12
         : date.hour > 12
         ? date.hour - 12
         : date.hour;
-
     final minute = date.minute.toString().padLeft(2, '0');
     final period = date.hour >= 12 ? 'PM' : 'AM';
-
     return '${date.day} ${months[date.month - 1]}, '
         '$hour:$minute $period';
   }
@@ -330,12 +321,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadWakeMode() async {
     final preferences = await SharedPreferences.getInstance();
     final enabled = preferences.getBool('sakhiWakeModeEnabled') ?? false;
-
     if (!mounted) return;
     setState(() {
       _wakeModeEnabled = enabled;
     });
-
     if (enabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -348,20 +337,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleWakeMode() async {
     final enabled = !_wakeModeEnabled;
     final preferences = await SharedPreferences.getInstance();
-
     await preferences.setBool('sakhiWakeModeEnabled', enabled);
-
     if (!mounted) return;
-
     setState(() {
       _wakeModeEnabled = enabled;
     });
-
     if (enabled) {
       await _startWakeListening();
-
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -376,9 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _wakeRestartTimer?.cancel();
       await _wakeSpeech.stop();
-
       if (!mounted) return;
-
       setState(() {
         _wakeSpeechAvailable = false;
       });
@@ -389,7 +370,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_wakeModeEnabled || _isOpeningSakhi || _wakeSpeech.isListening) {
       return;
     }
-
     final available = await _wakeSpeech.initialize(
       onStatus: _handleWakeStatus,
       onError: (error) {
@@ -397,17 +377,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _scheduleWakeRestart();
       },
     );
-
     if (!mounted) return;
-
     setState(() {
       _wakeSpeechAvailable = available;
     });
-
     if (!available || !_wakeModeEnabled || _isOpeningSakhi) {
       return;
     }
-
     await _wakeSpeech.listen(
       onResult: _handleWakeResult,
       listenOptions: SpeechListenOptions(
@@ -419,7 +395,6 @@ class _HomeScreenState extends State<HomeScreen> {
         pauseFor: const Duration(seconds: 4),
       ),
     );
-
     if (mounted) {
       setState(() {});
     }
@@ -429,7 +404,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (status == 'done' || status == 'notListening') {
       _scheduleWakeRestart();
     }
-
     if (mounted) {
       setState(() {});
     }
@@ -437,9 +411,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _scheduleWakeRestart() {
     _wakeRestartTimer?.cancel();
-
     if (!_wakeModeEnabled || _isOpeningSakhi) return;
-
     _wakeRestartTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted) {
         _startWakeListening();
@@ -449,16 +421,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handleWakeResult(SpeechRecognitionResult result) {
     final words = result.recognizedWords.toLowerCase().trim();
-
     if (words.isEmpty) return;
-
     final wakeDetected =
         words.contains('hey sakhi') ||
         words.contains('hi sakhi') ||
         words.contains('hello sakhi') ||
         words.contains('हे सखी') ||
         words.contains('हाय सखी');
-
     if (wakeDetected) {
       _openSakhi();
     }
@@ -467,9 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _scheduleFirstTutorial() async {
     final preferences = await SharedPreferences.getInstance();
     final completed = preferences.getBool('homeTutorialCompleted') ?? false;
-
     if (!mounted || completed) return;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _showHomeTutorial();
@@ -483,7 +450,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _scrollToCompleteTestAndContinue() async {
     final targetContext = _completeTestTutorialKey.currentContext;
-
     if (targetContext != null) {
       await Scrollable.ensureVisible(
         targetContext,
@@ -491,19 +457,25 @@ class _HomeScreenState extends State<HomeScreen> {
         curve: Curves.easeInOut,
         alignment: 0.45,
       );
-
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
-
     if (!mounted) return;
-
     _tutorialCoachMark?.next();
   }
 
   void _showHomeTutorial() {
     final targets = <TargetFocus>[
-      _languageTutorialTarget(),
-
+      _tutorialTarget(
+        id: 'header_controls',
+        key: _headerControlsTutorialKey,
+        title: _text('Voice assistant and language', 'वॉइस सहायक और भाषा'),
+        description: _text(
+          'Use the microphone to enable Hey Sakhi, and use the language button to switch between English and Hindi.',
+          'हे सखी चालू करने के लिए माइक्रोफोन और अंग्रेजी एवं हिंदी बदलने के लिए भाषा बटन का उपयोग करें।',
+        ),
+        align: ContentAlign.bottom,
+        showBack: false,
+      ),
       _tutorialTarget(
         id: 'device',
         key: _deviceTutorialKey,
@@ -587,7 +559,6 @@ class _HomeScreenState extends State<HomeScreen> {
         isLast: true,
       ),
     ];
-
     _tutorialCoachMark = TutorialCoachMark(
       targets: targets,
       colorShadow: const Color(0xFF10251A),
@@ -607,65 +578,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return true;
       },
     );
-
     _tutorialCoachMark!.show(context: context);
-  }
-
-  TargetFocus _languageTutorialTarget() {
-    final targetContext = _languageTutorialKey.currentContext;
-    final renderObject = targetContext?.findRenderObject();
-
-    if (renderObject is! RenderBox) {
-      return _tutorialTarget(
-        id: 'language',
-        key: _languageTutorialKey,
-        title: _text('Choose your language', 'अपनी भाषा चुनें'),
-        description: _text(
-          'Tap here anytime to switch between English and Hindi.',
-          'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
-        ),
-        align: ContentAlign.bottom,
-        showBack: false,
-      );
-    }
-
-    final measuredPosition = renderObject.localToGlobal(Offset.zero);
-    final measuredSize = renderObject.size;
-
-    const focusWidth = 48.0;
-    final focusHeight = measuredSize.height > 46 ? 46.0 : measuredSize.height;
-
-    final focusPosition = Offset(
-      measuredPosition.dx + measuredSize.width - focusWidth,
-      measuredPosition.dy + ((measuredSize.height - focusHeight) / 2),
-    );
-
-    return TargetFocus(
-      identify: 'language',
-      targetPosition: TargetPosition(
-        Size(focusWidth, focusHeight),
-        focusPosition,
-      ),
-      shape: ShapeLightFocus.RRect,
-      radius: 12,
-      paddingFocus: 2,
-      enableOverlayTab: false,
-      enableTargetTab: false,
-      contents: [
-        TargetContent(
-          align: ContentAlign.bottom,
-          child: _tutorialContent(
-            title: _text('Choose your language', 'अपनी भाषा चुनें'),
-            description: _text(
-              'Tap here anytime to switch between English and Hindi.',
-              'अंग्रेजी और हिंदी के बीच बदलने के लिए यहाँ टैप करें।',
-            ),
-            showBack: false,
-            isLast: false,
-          ),
-        ),
-      ],
-    );
   }
 
   TargetFocus _tutorialTarget({
@@ -854,6 +767,40 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _disconnectPortableDevice() async {
+    try {
+      await _bluetoothService.disconnect();
+      if (!mounted) return;
+      setState(() {
+        _isDeviceConnected = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'PARAKH-01 disconnected successfully.',
+              'PARAKH-01 सफलतापूर्वक डिस्कनेक्ट हो गया।',
+            ),
+          ),
+          backgroundColor: const Color(0xFF6F796F),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _text(
+              'Unable to disconnect the device.',
+              'डिवाइस को डिस्कनेक्ट नहीं किया जा सका।',
+            ),
+          ),
+          backgroundColor: const Color(0xFFB75B4A),
+        ),
+      );
+    }
+  }
+
   Widget _buildDeviceCard() {
     return Container(
       key: _deviceTutorialKey,
@@ -908,7 +855,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             onPressed: _isDeviceConnected
-                ? null
+                ? _disconnectPortableDevice
                 : () async {
                     final connected = await Navigator.of(context).push<bool>(
                       MaterialPageRoute<bool>(
@@ -916,20 +863,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             DeviceConnectionScreen(isHindi: _isHindi),
                       ),
                     );
-
                     if (!mounted || connected != true) return;
-
                     setState(() {
                       _isDeviceConnected = true;
                     });
                   },
             style: FilledButton.styleFrom(
-              backgroundColor: ParakhColors.forestGreen,
+              backgroundColor: _isDeviceConnected
+                  ? const Color(0xFFB75B4A)
+                  : ParakhColors.forestGreen,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
             ),
             child: Text(
               _isDeviceConnected
-                  ? _text('Connected', 'कनेक्टेड')
+                  ? _text('Disconnect', 'डिस्कनेक्ट करें')
                   : _text('Connect', 'कनेक्ट करें'),
               style: const TextStyle(fontSize: 12),
             ),
@@ -1031,7 +979,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             );
-
             if (!mounted) return;
             await _loadRecentTests();
           },
@@ -1156,7 +1103,6 @@ class _HomeScreenState extends State<HomeScreen> {
           else
             ...List.generate(_recentTests.length, (index) {
               final result = _recentTests[index];
-
               return Column(
                 children: [
                   if (index > 0) const Divider(height: 22),
@@ -1171,15 +1117,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildRecentTestRow(FeedTestResult result) {
     final isLowRisk = result.riskLevel.toUpperCase() == 'LOW';
-
     final accentColor = isLowRisk
         ? const Color(0xFF32834C)
         : const Color(0xFFB75B4A);
-
     final accentBackground = isLowRisk
         ? const Color(0xFFE3F1E6)
         : const Color(0xFFFFECE7);
-
     return InkWell(
       onTap: _openHistory,
       borderRadius: BorderRadius.circular(14),
@@ -1260,7 +1203,6 @@ class _HomeScreenState extends State<HomeScreen> {
           await _openHistory();
           return;
         }
-
         if (index == 2) {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -1269,7 +1211,6 @@ class _HomeScreenState extends State<HomeScreen> {
           );
           return;
         }
-
         if (index == 3) {
           final selectedLanguage = await Navigator.of(context).push<bool>(
             MaterialPageRoute<bool>(
@@ -1279,15 +1220,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           );
-
           if (!mounted) return;
-
           if (selectedLanguage != null) {
             setState(() {
               _isHindi = selectedLanguage;
             });
           }
-
           await _loadDemoMode();
           await _scheduleFirstTutorial();
         }
@@ -1318,6 +1256,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _deviceConnectionSubscription?.cancel();
     _wakeRestartTimer?.cancel();
     _wakeSpeech.stop();
     _homeScrollController.dispose();
